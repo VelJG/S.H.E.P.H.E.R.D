@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Frame, Point, Zone } from '../types';
 import CameraStage from './CameraStage';
-import { exportForProcessor } from '../lib/storage';
 
 const PALETTE = ['#4c9aff', '#d6a743', '#8b5cf6', '#2dd4bf', '#f472b6', '#fb923c'];
 
@@ -103,21 +102,9 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
     }
   };
 
-  const saveZones = async () => {
-    if (zones.length === 0 || saveStatus === 'saving') return;
-    setSaveStatus('saving');
-    try {
-      const base = (import.meta as any).env?.VITE_API_URL ?? '';
-      const res = await fetch(`${base}/config/zones`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(exportForProcessor(zones, frame)),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setSaveStatus('saved');
-    } catch {
-      setSaveStatus('error');
-    }
+  const saveZones = () => {
+    if (zones.length === 0) return;
+    setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 2600);
   };
 
@@ -279,7 +266,7 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
           <p className="savehint">
             {zones.length === 0
               ? 'Mark at least one zone to save.'
-              : 'Saved to the backend — coordinates are stored in original image pixels (frameWidth / frameHeight) for the detection processor.'}
+              : 'Saved in this browser and sent to ByteTrack with every frame.'}
           </p>
         </aside>
       </div>

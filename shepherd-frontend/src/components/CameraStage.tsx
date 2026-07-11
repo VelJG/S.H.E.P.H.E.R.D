@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { Frame, Point, Zone, ZoneMetric, ZoneStatus } from '../types';
+import type { Frame, Point, Track, Zone, ZoneMetric, ZoneStatus } from '../types';
 import { polygonPath } from '../lib/geometry';
 
 const STATUS_COLOR: Record<ZoneStatus, string> = {
@@ -12,6 +12,7 @@ type Props = {
   zones: Zone[];
   frame: Frame;
   metrics?: Record<string, ZoneMetric>;
+  tracks?: Track[];
   mode: 'live' | 'editor';
   draft?: Point[];
   selectedZoneId?: string | null;
@@ -29,6 +30,7 @@ export default function CameraStage({
   zones,
   frame,
   metrics,
+  tracks = [],
   mode,
   draft = [],
   selectedZoneId,
@@ -49,19 +51,20 @@ export default function CameraStage({
   };
 
   const isVideo = frame.kind === 'video' && !!frame.url;
+  const externalBackdrop = isVideo || (mode === 'live' && !!frame.url);
 
   return (
     <svg
       className={`stage ${mode === 'editor' && onStageClick ? 'stage--editor' : ''}`}
       viewBox={`0 0 ${W} ${H}`}
       // transparent when a <video> backdrop is rendered behind the SVG by the feed
-      style={{ aspectRatio: `${W} / ${H}`, fontFamily: 'var(--font-body)', background: isVideo ? 'transparent' : undefined }}
+      style={{ aspectRatio: `${W} / ${H}`, fontFamily: 'var(--font-body)', background: externalBackdrop ? 'transparent' : undefined }}
       preserveAspectRatio="none"
       onClick={handleClick}
       role="img"
       aria-label="Camera feed with monitoring zones"
     >
-      {isVideo ? null : frame.url ? (
+      {externalBackdrop ? null : frame.url ? (
         <image href={frame.url} x={0} y={0} width={W} height={H} preserveAspectRatio="none" />
       ) : (
         <BuiltInScene w={W} h={H} />
@@ -121,6 +124,22 @@ export default function CameraStage({
                 {z.name}
               </text>
             )}
+          </g>
+        );
+      })}
+
+      {/* ByteTrack IDs and bottom-center foot points */}
+      {mode === 'live' && tracks.map((track) => {
+        const [x1, y1, x2, y2] = track.bbox_xyxy;
+        const labelY = Math.max(0, y1 - 23 * s);
+        return (
+          <g key={track.id} pointerEvents="none">
+            <rect x={x1} y={y1} width={Math.max(0, x2 - x1)} height={Math.max(0, y2 - y1)} fill="none" stroke="#f7b955" strokeWidth={2.5 * s} />
+            <rect x={x1} y={labelY} width={92 * s} height={22 * s} rx={4 * s} fill="#f7b955" />
+            <text x={x1 + 7 * s} y={labelY + 15 * s} fill="#08090b" fontFamily="OCRAM Regular, monospace" fontSize={12 * s} fontWeight={700}>
+              ID {track.id} · {Math.round(track.confidence * 100)}%
+            </text>
+            <circle cx={(x1 + x2) / 2} cy={y2} r={4 * s} fill="#fff" stroke="#f7b955" strokeWidth={2 * s} />
           </g>
         );
       })}

@@ -125,6 +125,55 @@ multipart/form-data field: file
 - Feed tracks into zone analysis.
 - Write metrics/incidents to backend.
 
+## Stream Inference Update Task
+
+Update `services/stream-processor` so it becomes the integration worker
+between camera/video inference and the AWS backend.
+
+Required behavior:
+
+1. Fetch zone configuration from backend:
+   - `GET /config/zones`
+   - refresh periodically, e.g. `ZONE_REFRESH_SEC=10`
+2. Run the inference pipeline:
+   - read camera/video frames
+   - call YOLO inference via `YOLO_INFERENCE_URL`, or SageMaker later
+   - feed detections into ByteTrack
+   - run zone analysis
+3. Push live zone metrics:
+   - `POST /metrics`
+   - include `ts` and `zones[]`
+   - each zone should include `zoneId`, `personCount`, `queueLength`,
+     `waitSec`, and `status`
+   - throttle with `METRICS_POST_INTERVAL_SEC`, default around 1s
+4. Create incidents only on congestion transitions:
+   - `POST /incidents`
+   - include `zoneId`, `title`, `severity`, `summary`, `personCount`,
+     `metrics`, and optional `evidenceKey`
+   - avoid spam with per-zone `INCIDENT_COOLDOWN_SEC`
+5. Upload evidence screenshots when creating incidents:
+   - call `GET /uploads/presign?filename=...&contentType=image/jpeg`
+   - upload the JPEG directly to the returned `uploadUrl`
+   - pass the returned `key` as `evidenceKey` in `POST /incidents`
+
+Suggested env vars:
+
+```env
+BACKEND_API_URL=https://...
+YOLO_INFERENCE_URL=http://localhost:8080/invocations
+ZONE_REFRESH_SEC=10
+METRICS_POST_INTERVAL_SEC=1
+INCIDENT_COOLDOWN_SEC=60
+```
+
+Ownership rule:
+
+- `services/inference`: stateless YOLO only; no backend writes.
+- `services/stream-processor`: video loop, YOLO/SageMaker calls,
+  ByteTrack, zone analysis, backend writes.
+- `shepherd-infra/lambda`: API validation, DynamoDB/S3 persistence,
+  incident/task workflow, notifications.
+
 ## ByteTrack Tasks
 
 - Select implementation/library.
