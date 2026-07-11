@@ -13,7 +13,7 @@ type Props = {
   frame: Frame;
   metrics?: Record<string, ZoneMetric>;
   tracks?: Track[];
-  mode: 'live' | 'editor';
+  mode: 'live' | 'editor' | 'demo';
   draft?: Point[];
   selectedZoneId?: string | null;
   onStageClick?: (p: Point) => void;
@@ -40,6 +40,8 @@ export default function CameraStage({
   const W = frame.width;
   const H = frame.height;
   const s = Math.max(W, H) / 1000;
+  const editable = mode === 'editor' || mode === 'demo';
+  const showTracks = mode === 'live' || mode === 'demo';
 
   // Map a screen click back to ORIGINAL IMAGE PIXELS regardless of CSS resize.
   const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -55,7 +57,7 @@ export default function CameraStage({
 
   return (
     <svg
-      className={`stage ${mode === 'editor' && onStageClick ? 'stage--editor' : ''}`}
+      className={`stage ${editable && onStageClick ? 'stage--editor' : ''}`}
       viewBox={`0 0 ${W} ${H}`}
       // transparent when a <video> backdrop is rendered behind the SVG by the feed
       style={{ aspectRatio: `${W} / ${H}`, fontFamily: 'var(--font-body)', background: externalBackdrop ? 'transparent' : undefined }}
@@ -87,18 +89,18 @@ export default function CameraStage({
               fillOpacity={selected ? 0.24 : 0.14}
               stroke={stroke}
               strokeWidth={(selected ? 4 : 2.5) * s}
-              strokeDasharray={mode === 'editor' ? undefined : `${9 * s} ${5 * s}`}
-              onClick={mode === 'editor' && onSelectZone ? (e) => { e.stopPropagation(); onSelectZone(z.id); } : undefined}
-              style={mode === 'editor' ? { cursor: 'pointer' } : undefined}
+              strokeDasharray={editable ? undefined : `${9 * s} ${5 * s}`}
+              onClick={editable && onSelectZone ? (e) => { e.stopPropagation(); onSelectZone(z.id); } : undefined}
+              style={editable ? { cursor: 'pointer' } : undefined}
             />
             {/* editor: show vertices only for the selected zone */}
-            {mode === 'editor' &&
+            {editable &&
               selected &&
               z.points.map((p, i) => (
                 <circle key={i} cx={p.x} cy={p.y} r={7 * s} fill={stroke} stroke="#fff" strokeWidth={2 * s} />
               ))}
             {/* live: status pill at top-left of the zone */}
-            {z.points.length >= 3 && mode === 'live' && m && (
+            {z.points.length >= 3 && (mode === 'live' || mode === 'demo') && m && (
               <g transform={`translate(${bb.minX + 8 * s}, ${bb.minY + 8 * s}) scale(${s})`}>
                 <rect x={0} y={0} width={220} height={22} rx={5} fill="rgba(8,9,11,0.82)" />
                 <text x={8} y={15} fill={stroke} fontFamily="OCRAM Regular, monospace" fontSize={12} fontWeight={600}>
@@ -107,7 +109,7 @@ export default function CameraStage({
               </g>
             )}
             {/* editor: big centered zone name */}
-            {z.points.length >= 3 && mode === 'editor' && (
+            {z.points.length >= 3 && editable && !m && (
               <text
                 x={cx}
                 y={cy}
@@ -129,7 +131,7 @@ export default function CameraStage({
       })}
 
       {/* ByteTrack IDs and bottom-center foot points */}
-      {mode === 'live' && tracks.map((track) => {
+      {showTracks && tracks.map((track) => {
         const [x1, y1, x2, y2] = track.bbox_xyxy;
         const labelY = Math.max(0, y1 - 23 * s);
         return (
@@ -137,7 +139,7 @@ export default function CameraStage({
             <rect x={x1} y={y1} width={Math.max(0, x2 - x1)} height={Math.max(0, y2 - y1)} fill="none" stroke="#f7b955" strokeWidth={2.5 * s} />
             <rect x={x1} y={labelY} width={92 * s} height={22 * s} rx={4 * s} fill="#f7b955" />
             <text x={x1 + 7 * s} y={labelY + 15 * s} fill="#08090b" fontFamily="OCRAM Regular, monospace" fontSize={12 * s} fontWeight={700}>
-              ID {track.id} · {Math.round(track.confidence * 100)}%
+              ID {track.id} - {Math.round(track.confidence * 100)}%
             </text>
             <circle cx={(x1 + x2) / 2} cy={y2} r={4 * s} fill="#fff" stroke="#f7b955" strokeWidth={2 * s} />
           </g>
@@ -190,3 +192,4 @@ function BuiltInScene({ w, h }: { w: number; h: number }) {
     </g>
   );
 }
+

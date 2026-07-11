@@ -36,6 +36,7 @@ export function useLiveData(
   frame: Frame,
   videoRef: RefObject<HTMLVideoElement>,
   heatCanvasRef: RefObject<HTMLCanvasElement>,
+  options: { initialRunning?: boolean } = {},
 ): LiveState {
   const [metrics, setMetrics] = useState<Record<string, ZoneMetric>>({});
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -45,7 +46,7 @@ export function useLiveData(
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
   const [latencyMs, setLatencyMs] = useState(0);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(options.initialRunning ?? true);
   const [intervalMs, setIntervalMsState] = useState(() => Math.max(1, num(env.VITE_VISION_INTERVAL_MS) || 300));
   const zonesRef = useRef(zones);
   const busyRef = useRef(false);
