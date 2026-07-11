@@ -37,6 +37,8 @@ aws_credentials*
 *.webm
 samples/images/*
 !samples/images/.gitkeep
+samples/videos/*
+!samples/videos/.gitkeep
 
 # Terraform
 *.tfstate

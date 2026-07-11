@@ -47,6 +47,31 @@ stream-processor captures frame
 
 This keeps model serving reusable for local Docker and later SageMaker.
 
+## Realtime Timing
+
+Video rendering and YOLO inference should run on separate clocks.
+
+```text
+video/canvas render loop: as smooth as the client can display
+YOLO inference loop: DETECT_INTERVAL_MS, default 33ms on the host laptop
+fallback interval: DETECT_INTERVAL_FALLBACK_MS, default 50ms
+in-flight policy: skip, never queue stale frames
+```
+
+The interval must account for the full path:
+
+```text
+browser frame capture
+  -> JPEG encode
+  -> HTTP upload
+  -> YOLO detect
+  -> JSON parse
+  -> canvas draw
+  -> network/Tailscale
+```
+
+`33ms` is the high-quality local target. `50ms` is the stable fallback if real client/network overhead causes visible lag.
+
 ## Future Work
 
 - Stream Processor: phone camera input, frame sampling, invocation orchestration.
