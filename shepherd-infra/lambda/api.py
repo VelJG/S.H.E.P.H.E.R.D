@@ -138,6 +138,8 @@ def get_config_zones() -> dict[str, Any]:
     item = CONFIG_ZONES_TABLE.get_item(Key={'configId': 'default'}).get('Item', {})
     return response(200, {
         'configId': 'default',
+        'frameWidth': item.get('frameWidth'),
+        'frameHeight': item.get('frameHeight'),
         'zones': item.get('zones', []),
         'updatedAt': item.get('updatedAt'),
         'updatedBy': item.get('updatedBy'),
@@ -160,6 +162,8 @@ def put_config_zones(event: dict[str, Any]) -> dict[str, Any]:
 
     item = {
         'configId': 'default',
+        'frameWidth': metadata.get('frameWidth'),
+        'frameHeight': metadata.get('frameHeight'),
         'zones': to_dynamo_value(zones),
         'updatedAt': metadata.get('updatedAt', now_iso()),
         'updatedBy': metadata.get('updatedBy', 'dashboard'),
@@ -174,12 +178,18 @@ def post_metrics(event: dict[str, Any]) -> dict[str, Any]:
 
     if isinstance(payload, list):
         metrics = payload
+        default_timestamp = request_timestamp
     elif isinstance(payload, dict) and isinstance(payload.get('metrics'), list):
         metrics = payload['metrics']
+        default_timestamp = payload.get('ts', payload.get('timestamp', request_timestamp))
+    elif isinstance(payload, dict) and isinstance(payload.get('zones'), list):
+        metrics = payload['zones']
+        default_timestamp = payload.get('ts', payload.get('timestamp', request_timestamp))
     elif isinstance(payload, dict):
         metrics = [payload]
+        default_timestamp = payload.get('ts', payload.get('timestamp', request_timestamp))
     else:
-        raise ValueError('Metrics payload must be an object, array, or `{ metrics: [...] }`')
+        raise ValueError('Metrics payload must be an object, array, `{ metrics: [...] }`, or `{ ts, zones: [...] }`')
 
     written = 0
     for metric in metrics:
@@ -191,11 +201,13 @@ def post_metrics(event: dict[str, Any]) -> dict[str, Any]:
 
         item = {
             'zoneId': str(zone_id),
-            'timestamp': str(metric.get('timestamp', request_timestamp)),
+            'timestamp': str(metric.get('timestamp', metric.get('ts', default_timestamp))),
             'source': metric.get('source', 'processor'),
-            'status': metric.get('status', 'ok'),
-            'occupancy': metric.get('occupancy', 0),
-            'queueLength': metric.get('queueLength', 0),
+            'status': metric.get('status', 'normal'),
+            'personCount': metric.get('personCount', metric.get('occupancy', 0)),
+            'occupancy': metric.get('occupancy', metric.get('personCount', 0)),
+            'queueLength': metric.get('queueLength', metric.get('personCount', 0)),
+            'waitSec': metric.get('waitSec', 0),
             'congestionScore': metric.get('congestionScore', 0),
             'alert': metric.get('alert', False),
             'frameId': metric.get('frameId'),
