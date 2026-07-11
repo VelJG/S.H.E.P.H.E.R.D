@@ -1,0 +1,19 @@
+services:
+  inference:
+    build:
+      context: ./services/inference
+    image: shepherd-yolo:local
+    container_name: shepherd-yolo
+    ports:
+      - "8080:8080"
+    environment:
+      MODEL_NAME: yolo26s.pt
+      MODEL_PATH: /models/yolo26s.pt
+      IMG_SIZE: "640"
+      CONF_THRES: "0.25"
+      DEVICE: auto
+      YOLO_CONFIG_DIR: /cache/ultralytics
+    volumes:
+      - ${SHEPHERD_MODEL_DIR:-./models/yolo}:/models:ro
+      - ${SHEPHERD_YOLO_CACHE_DIR:-./.cache/ultralytics}:/cache/ultralytics
+    gpus: all

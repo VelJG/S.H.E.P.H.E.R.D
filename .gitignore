@@ -1,1 +1,55 @@
 .serena/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+docker-compose.local.yml
+*.pem
+*.key
+credentials
+credentials.*
+.aws/
+aws_credentials*
+
+# Model artifacts
+*.pt
+*.pth
+*.onnx
+*.engine
+*.trt
+*.weights
+
+# Media and generated outputs
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+samples/images/*
+!samples/images/.gitkeep
+samples/videos/*
+!samples/videos/.gitkeep
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
