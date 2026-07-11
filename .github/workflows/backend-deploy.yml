@@ -1,0 +1,68 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'shepherd-infra/lambda/**'
+      - 'shepherd-infra/lib/**'
+      - 'shepherd-infra/bin/**'
+      - 'shepherd-infra/cdk.json'
+      - 'shepherd-infra/package.json'
+      - 'shepherd-infra/package-lock.json'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: backend-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      AWS_REGION: ap-southeast-1
+      STACK_NAME: ShepherdInfraStack
+      INFRA_DIR: shepherd-infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: shepherd-infra/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.INFRA_DIR }}
+        run: npm ci
+
+      - name: Build CDK app
+        working-directory: ${{ env.INFRA_DIR }}
+        run: npm run build
+
+      - name: Deploy backend stack
+        working-directory: ${{ env.INFRA_DIR }}
+        run: npx cdk deploy "$STACK_NAME" --require-approval never
+
+      - name: Print backend outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiGatewayUrl' || OutputKey=='EvidenceBucketName' || OutputKey=='VenueMetricsTableName' || OutputKey=='IncidentsTableName' || OutputKey=='OperationalTasksTableName' || OutputKey=='ConfigZonesTableName'].[OutputKey,OutputValue]" \
+            --output table
