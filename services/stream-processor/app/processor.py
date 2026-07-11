@@ -85,7 +85,12 @@ class ByteTrackZoneProcessor:
             match_thresh=match_thresh,
             fuse_score=fuse_score,
         )
-        self.tracker = BYTETracker(args=args, frame_rate=frame_rate)
+        try:
+            self.tracker = BYTETracker(args=args, frame_rate=frame_rate)
+        except TypeError as exc:
+            if "frame_rate" not in str(exc):
+                raise
+            self.tracker = BYTETracker(args=args)
 
     def reset(self) -> None:
         self.tracker.reset()
