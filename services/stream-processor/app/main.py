@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import FastAPI
@@ -16,7 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-processor = ByteTrackZoneProcessor(frame_rate=10)
+processor = ByteTrackZoneProcessor(frame_rate=int(os.getenv("TRACK_FRAME_RATE", "30")))
 
 
 @app.get("/ping")

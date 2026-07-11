@@ -3,3 +3,5 @@ ultralytics>=8.3.0
 lap>=0.5.12
 opencv-python>=4.10.0
 requests==2.32.3
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0

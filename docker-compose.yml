@@ -17,3 +17,13 @@ services:
       - ${SHEPHERD_MODEL_DIR:-./models/yolo}:/models:ro
       - ${SHEPHERD_YOLO_CACHE_DIR:-./.cache/ultralytics}:/cache/ultralytics
     gpus: all
+
+  stream-processor:
+    build:
+      context: ./services/stream-processor
+    image: shepherd-bytetrack:local
+    container_name: shepherd-bytetrack
+    ports:
+      - "8090:8090"
+    environment:
+      TRACK_FRAME_RATE: "30"
