@@ -17,7 +17,7 @@ class YoloPersonDetector:
         self.settings = settings
         self.model_ref = settings.model_path or settings.model_name
         self.device = self._resolve_device(settings.device)
-        self.use_half = self.device.startswith("cuda")
+        self.quantize = 16 if self.device.startswith("cuda") else None
         if settings.model_path and not Path(settings.model_path).exists():
             raise FileNotFoundError(
                 f"MODEL_PATH does not exist inside the container: {settings.model_path}. "
@@ -40,7 +40,7 @@ class YoloPersonDetector:
             imgsz=self.settings.image_size,
             conf=self.settings.conf_thres,
             device=self.device,
-            half=self.use_half,
+            quantize=self.quantize,
             classes=[PERSON_CLASS_ID],
             verbose=False,
         )
