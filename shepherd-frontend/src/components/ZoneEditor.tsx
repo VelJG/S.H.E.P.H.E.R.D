@@ -69,8 +69,8 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
       <div className="editor__stage">
         <div className="hint">
           {draft.length === 0
-            ? '👆 Bấm lên khung để đặt các đỉnh của vùng cần theo dõi (queue trước quầy). Cần ≥3 điểm.'
-            : `Đang vẽ: ${draft.length} điểm — bấm "Đóng vùng" khi xong.`}
+            ? '👆 Click on the frame to drop vertices for a monitoring zone (the queue in front of a booth). Needs ≥3 points.'
+            : `Drawing: ${draft.length} points — press "Close zone" when done.`}
         </div>
         <CameraStage
           zones={zones}
@@ -83,34 +83,34 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
         <div className="toolbar">
           <input
             className="input"
-            placeholder="Tên vùng (vd: Quầy áo thun)"
+            placeholder="Zone name (e.g. T-shirt booth)"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <button className="btn btn--primary" disabled={draft.length < 3} onClick={finishZone}>
-            ✓ Đóng vùng ({draft.length})
+            ✓ Close zone ({draft.length})
           </button>
           <button className="btn" disabled={!draft.length} onClick={() => setDraft((d) => d.slice(0, -1))}>
-            ↶ Undo điểm
+            ↶ Undo point
           </button>
           <button className="btn" disabled={!draft.length} onClick={() => setDraft([])}>
-            Huỷ
+            Cancel
           </button>
         </div>
       </div>
 
       <aside className="editor__panel">
-        <h3>Nguồn khung hình</h3>
+        <h3>Frame source</h3>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={onUpload} />
         <div className="row">
-          <button className="btn" onClick={() => fileRef.current?.click()}>📁 Tải frame camera</button>
+          <button className="btn" onClick={() => fileRef.current?.click()}>📁 Upload camera frame</button>
           {frame.url && (
             <button className="btn" onClick={() => setFrame({ width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: null })}>
-              Dùng scene demo
+              Use demo scene
             </button>
           )}
         </div>
-        <p className="muted small">Hệ toạ độ gốc: <b>{frame.width}×{frame.height}</b> px — mọi điểm zone lưu theo pixel ảnh gốc.</p>
+        <p className="muted small">Canonical system: <b>{frame.width}×{frame.height}</b> px — zone points are stored in original image pixels.</p>
 
         <h3>Zones ({zones.length})</h3>
         <div className="zonelist">
@@ -130,29 +130,29 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
                 <button className="btn btn--icon" onClick={() => deleteZone(z.id)}>🗑</button>
               </div>
               <div className="zonecard__grid">
-                <label>Cảnh báo ≥
+                <label>Warn ≥
                   <input type="number" className="input input--num" value={z.warnAt}
                     onChange={(e) => updateZone(z.id, { warnAt: +e.target.value })} />
                 </label>
-                <label>Tắc nghẽn ≥
+                <label>Congest ≥
                   <input type="number" className="input input--num" value={z.congestAt}
                     onChange={(e) => updateZone(z.id, { congestAt: +e.target.value })} />
                 </label>
-                <label>Phục vụ (s)
+                <label>Service (s)
                   <input type="number" className="input input--num" value={z.avgServiceSec}
                     onChange={(e) => updateZone(z.id, { avgServiceSec: +e.target.value })} />
                 </label>
               </div>
             </div>
           ))}
-          {zones.length === 0 && <p className="muted">Chưa có vùng nào. Vẽ trên khung bên trái.</p>}
+          {zones.length === 0 && <p className="muted">No zones yet. Draw one on the frame to the left.</p>}
         </div>
 
         <div className="row">
           <button className="btn btn--primary" onClick={exportJson}>⬇ Export zones.json</button>
         </div>
         <p className="muted small">
-          Đã tự lưu vào trình duyệt. JSON export gồm <b>frameWidth/frameHeight</b> và points theo <b>pixel ảnh gốc</b> cho processor Python.
+          Auto-saved to the browser. The JSON export includes <b>frameWidth/frameHeight</b> and points in <b>original image pixels</b> for the Python processor.
         </p>
       </aside>
     </div>

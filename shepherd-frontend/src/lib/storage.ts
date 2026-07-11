@@ -1,14 +1,14 @@
 import type { Frame, Zone } from '../types';
 
-const KEY = 'shepherd.zones.v1';
+const KEY = 'shepherd.zones.v2';
 
 /** Two default gift-booth queue zones, authored in the default 1280x720 frame. */
 export function defaultZones(): Zone[] {
   return [
     {
       id: 'booth-1',
-      name: 'Quầy quà 1',
-      color: '#00A9E0',
+      name: 'Booth 1 queue',
+      color: '#4c9aff',
       points: [
         { x: 150, y: 300 },
         { x: 470, y: 300 },
@@ -21,8 +21,8 @@ export function defaultZones(): Zone[] {
     },
     {
       id: 'booth-2',
-      name: 'Quầy quà 2',
-      color: '#FF9900',
+      name: 'Booth 2 queue',
+      color: '#ef5b47',
       points: [
         { x: 810, y: 300 },
         { x: 1130, y: 300 },
