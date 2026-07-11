@@ -54,6 +54,19 @@ Timing assumptions:
   - samples by interval
   - calls YOLO `/invocations`
   - writes JSONL detection records for ByteTrack handoff
+- Backend API Lambda scaffold for demo routes:
+  - `GET /config/zones`
+  - `PUT /config/zones`
+  - `POST /metrics`
+  - `GET /metrics/latest`
+  - `GET /uploads/presign`
+  - `POST /incidents`
+  - `GET /incidents`
+  - `PATCH /incidents/{id}`
+  - `GET /tasks`
+  - `PATCH /tasks/{id}`
+- DynamoDB `ConfigZones` table added for zone editor output.
+- `PUT /config/zones` validates and stores the latest default zone config for the dashboard and stream processor.
 
 ## Immediate Next Tasks
 
@@ -77,13 +90,14 @@ Timing assumptions:
 }
 ```
 
-5. Connect frontend Zone Editor export to stream-processor zone config.
+5. Wire frontend Zone Editor save action to backend `PUT /config/zones`.
 6. Add zone analysis after ByteTrack:
   - point-in-polygon by bbox center or foot point
   - person count per zone
   - queue length
   - wait/dwell estimate
 7. Push zone metrics/incidents to backend API.
+8. Update stream processor to fetch zone config from `GET /config/zones`.
 
 ## YOLO Inference Tasks
 
@@ -152,6 +166,9 @@ multipart/form-data field: file
 ## Backend/Infra Tasks
 
 - Continue in `shepherd-infra`.
+- Zone config:
+  - `PUT /config/zones` stores the latest editor polygons in DynamoDB `ConfigZones`
+  - `GET /config/zones` returns the saved polygons to dashboard and stream processor
 - Processor writes:
   - `POST /metrics`
   - `POST /incidents`
@@ -166,6 +183,6 @@ multipart/form-data field: file
 
 - Which ByteTrack package/library will be used?
 - Will realtime camera input arrive as webcam, RTSP, WebRTC, or browser-uploaded frames?
-- Will zone config be read from local exported JSON first or backend `/config/zones`?
+- Will the stream processor temporarily support local exported JSON, or only backend `/config/zones`?
 - What is the initial MVP incident rule?
 - How many simultaneous cameras are expected for demo?
