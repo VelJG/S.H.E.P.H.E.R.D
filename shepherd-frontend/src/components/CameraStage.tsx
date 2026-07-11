@@ -60,7 +60,7 @@ export default function CameraStage({
     <svg
       className={`stage ${mode === 'editor' ? 'stage--editor' : ''}`}
       viewBox={`0 0 ${W} ${H}`}
-      style={{ aspectRatio: `${W} / ${H}` }}
+      style={{ aspectRatio: `${W} / ${H}`, fontFamily: 'var(--font-body)' }}
       preserveAspectRatio="none"
       onClick={handleClick}
       role="img"
@@ -95,8 +95,8 @@ export default function CameraStage({
             {z.points.length >= 3 && (
               <g transform={`translate(${bb.minX + 8 * s}, ${bb.minY + 8 * s}) scale(${s})`}>
                 <rect x={0} y={0} width={mode === 'live' && m ? 220 : 150} height={22} rx={5} fill="rgba(8,9,11,0.82)" />
-                <text x={8} y={15} fill={stroke} fontFamily="'IBM Plex Mono',monospace" fontSize={12} fontWeight={600}>
-                  {mode === 'live' && m ? `${z.name} · ${m.status.toUpperCase()} · ${m.personCount}` : z.name}
+                <text x={8} y={15} fill={stroke} fontFamily="OCRAM Regular, monospace" fontSize={12} fontWeight={600}>
+                  {mode === 'live' && m ? `${z.name} - ${m.status.toUpperCase()} - ${m.personCount}` : z.name}
                 </text>
               </g>
             )}
@@ -130,7 +130,7 @@ export default function CameraStage({
               <rect x={x} y={y} width={boxW} height={boxH} rx={3 * s} fill="none" stroke={DETECT} strokeWidth={1.6 * s} />
               <g transform={`translate(${x}, ${y - 17 * s}) scale(${s})`}>
                 <rect x={0} y={0} width={78} height={16} rx={3} fill={DETECT} />
-                <text x={5} y={12} fill="#08090b" fontFamily="'IBM Plex Mono',monospace" fontSize={10} fontWeight={600}>
+                <text x={5} y={12} fill="#08090b" fontFamily="OCRAM Regular, monospace" fontSize={10} fontWeight={600}>
                   Person {conf(t.id)}
                 </text>
               </g>

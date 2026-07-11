@@ -69,8 +69,8 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
       <div className="editor__stage">
         <div className="hint">
           {draft.length === 0
-            ? '👆 Click on the frame to drop vertices for a monitoring zone (the queue in front of a booth). Needs ≥3 points.'
-            : `Drawing: ${draft.length} points — press "Close zone" when done.`}
+            ? 'Click on the frame to drop vertices for a monitoring zone. A zone needs at least 3 points.'
+            : `Drawing: ${draft.length} points - press "Close zone" when done.`}
         </div>
         <CameraStage
           zones={zones}
@@ -88,10 +88,10 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
             onChange={(e) => setName(e.target.value)}
           />
           <button className="btn btn--primary" disabled={draft.length < 3} onClick={finishZone}>
-            ✓ Close zone ({draft.length})
+            Close zone ({draft.length})
           </button>
           <button className="btn" disabled={!draft.length} onClick={() => setDraft((d) => d.slice(0, -1))}>
-            ↶ Undo point
+            Undo point
           </button>
           <button className="btn" disabled={!draft.length} onClick={() => setDraft([])}>
             Cancel
@@ -103,14 +103,16 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
         <h3>Frame source</h3>
         <input ref={fileRef} type="file" accept="image/*" hidden onChange={onUpload} />
         <div className="row">
-          <button className="btn" onClick={() => fileRef.current?.click()}>📁 Upload camera frame</button>
+          <button className="btn" onClick={() => fileRef.current?.click()}>Upload camera frame</button>
           {frame.url && (
             <button className="btn" onClick={() => setFrame({ width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: null })}>
               Use demo scene
             </button>
           )}
         </div>
-        <p className="muted small">Canonical system: <b>{frame.width}×{frame.height}</b> px — zone points are stored in original image pixels.</p>
+        <p className="muted small">
+          Canonical system: <b>{frame.width} x {frame.height}</b> px - zone points are stored in original image pixels.
+        </p>
 
         <h3>Zones ({zones.length})</h3>
         <div className="zonelist">
@@ -127,20 +129,32 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
                   value={z.name}
                   onChange={(e) => updateZone(z.id, { name: e.target.value })}
                 />
-                <button className="btn btn--icon" onClick={() => deleteZone(z.id)}>🗑</button>
+                <button className="btn btn--icon" onClick={() => deleteZone(z.id)}>Delete</button>
               </div>
               <div className="zonecard__grid">
-                <label>Warn ≥
-                  <input type="number" className="input input--num" value={z.warnAt}
-                    onChange={(e) => updateZone(z.id, { warnAt: +e.target.value })} />
+                <label>Warn at least
+                  <input
+                    type="number"
+                    className="input input--num"
+                    value={z.warnAt}
+                    onChange={(e) => updateZone(z.id, { warnAt: +e.target.value })}
+                  />
                 </label>
-                <label>Congest ≥
-                  <input type="number" className="input input--num" value={z.congestAt}
-                    onChange={(e) => updateZone(z.id, { congestAt: +e.target.value })} />
+                <label>Congest at least
+                  <input
+                    type="number"
+                    className="input input--num"
+                    value={z.congestAt}
+                    onChange={(e) => updateZone(z.id, { congestAt: +e.target.value })}
+                  />
                 </label>
                 <label>Service (s)
-                  <input type="number" className="input input--num" value={z.avgServiceSec}
-                    onChange={(e) => updateZone(z.id, { avgServiceSec: +e.target.value })} />
+                  <input
+                    type="number"
+                    className="input input--num"
+                    value={z.avgServiceSec}
+                    onChange={(e) => updateZone(z.id, { avgServiceSec: +e.target.value })}
+                  />
                 </label>
               </div>
             </div>
@@ -149,7 +163,7 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
         </div>
 
         <div className="row">
-          <button className="btn btn--primary" onClick={exportJson}>⬇ Export zones.json</button>
+          <button className="btn btn--primary" onClick={exportJson}>Export zones.json</button>
         </div>
         <p className="muted small">
           Auto-saved to the browser. The JSON export includes <b>frameWidth/frameHeight</b> and points in <b>original image pixels</b> for the Python processor.

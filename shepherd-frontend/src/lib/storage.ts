@@ -54,7 +54,7 @@ export function saveZones(zones: Zone[]): void {
 
 /**
  * Export shape the Python processor consumes. Points are in ORIGINAL IMAGE
- * PIXELS relative to frameWidth x frameHeight — the processor scales them to
+ * PIXELS relative to frameWidth x frameHeight - the processor scales them to
  * whatever resolution its decoded frame happens to be.
  */
 export function exportForProcessor(zones: Zone[], frame: Frame) {

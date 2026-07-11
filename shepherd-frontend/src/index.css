@@ -1,6 +1,6 @@
 @font-face {
-  font-family: 'FNAF';
-  src: url('/fonts/fnaf.ttf') format('truetype');
+  font-family: 'OCRAM Regular';
+  src: url('/fonts/OCRAM-Regular.ttf') format('truetype');
   font-display: swap;
 }
 
@@ -22,9 +22,9 @@
   --amber: #d6a743;
   --radius: 12px;
 
-  --font-display: 'FNAF', 'IBM Plex Sans', system-ui, sans-serif;
-  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-display: 'OCRAM Regular', system-ui, sans-serif;
+  --font-body: 'OCRAM Regular', system-ui, sans-serif;
+  --font-mono: 'OCRAM Regular', ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; }
