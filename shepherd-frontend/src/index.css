@@ -105,6 +105,37 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-body);
 .pipeline-note { font: 500 10px var(--font-mono); color: var(--amber); }
 .pipeline-error { max-width: 290px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10px var(--font-mono); color: var(--red); }
 
+/* ---------- Demo video controls ---------- */
+.demo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 38px;
+}
+.demo-controls .btn { padding: 8px 12px; font-size: 12px; }
+.demo-scrub {
+  display: grid;
+  grid-template-columns: 52px 1fr 52px;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  padding: 8px 11px;
+  font: 600 11px var(--font-mono);
+  color: var(--muted);
+}
+.demo-scrub input {
+  width: 100%;
+  accent-color: var(--blue);
+}
+.demo-zone-metric {
+  margin: 8px 0 0;
+  font: 500 10.5px var(--font-mono);
+  color: var(--muted);
+}
+
 /* ---------- Camera strip ---------- */
 .camstrip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .camthumb { position: relative; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-2); background: #0c1421; cursor: pointer; }
