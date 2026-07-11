@@ -7,13 +7,23 @@ services:
     ports:
       - "8080:8080"
     environment:
-      MODEL_NAME: yolo26s.pt
-      MODEL_PATH: /models/yolo26s.pt
-      IMG_SIZE: "640"
-      CONF_THRES: "0.25"
-      DEVICE: auto
+      MODEL_NAME: ${MODEL_NAME:-yolo26s.pt}
+      MODEL_PATH: ${MODEL_PATH:-/models/yolo26s.pt}
+      IMG_SIZE: ${IMG_SIZE:-640}
+      CONF_THRES: ${CONF_THRES:-0.25}
+      DEVICE: ${DEVICE:-auto}
       YOLO_CONFIG_DIR: /cache/ultralytics
     volumes:
       - ${SHEPHERD_MODEL_DIR:-./models/yolo}:/models:ro
       - ${SHEPHERD_YOLO_CACHE_DIR:-./.cache/ultralytics}:/cache/ultralytics
     gpus: all
+
+  stream-processor:
+    build:
+      context: ./services/stream-processor
+    image: shepherd-bytetrack:local
+    container_name: shepherd-bytetrack
+    ports:
+      - "8090:8090"
+    environment:
+      TRACK_FRAME_RATE: "30"
