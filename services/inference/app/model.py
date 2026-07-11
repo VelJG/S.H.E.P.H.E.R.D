@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import torch
 from PIL import Image
@@ -17,6 +18,11 @@ class YoloPersonDetector:
         self.model_ref = settings.model_path or settings.model_name
         self.device = self._resolve_device(settings.device)
         self.use_half = self.device.startswith("cuda")
+        if settings.model_path and not Path(settings.model_path).exists():
+            raise FileNotFoundError(
+                f"MODEL_PATH does not exist inside the container: {settings.model_path}. "
+                "Check the Docker volume mount and SHEPHERD_MODEL_DIR."
+            )
         self.model = YOLO(self.model_ref)
 
     @staticmethod
