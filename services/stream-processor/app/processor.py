@@ -35,22 +35,44 @@ class Zone:
 class _DetectionBatch:
     """Small adapter matching the attributes BYTETracker reads from Ultralytics Boxes."""
 
-    def __init__(self, detections: list[dict[str, Any]]):
+    def __init__(
+        self,
+        detections: list[dict[str, Any]] | None = None,
+        *,
+        xyxy: np.ndarray | None = None,
+        scores: np.ndarray | None = None,
+        classes: np.ndarray | None = None,
+    ):
+        if xyxy is not None and scores is not None and classes is not None:
+            self.xyxy = np.asarray(xyxy, dtype=np.float32).reshape(-1, 4)
+            self.conf = np.asarray(scores, dtype=np.float32).reshape(-1)
+            self.cls = np.asarray(classes, dtype=np.float32).reshape(-1)
+            self.xywh = self._xyxy_to_xywh(self.xyxy)
+            return
+
         boxes: list[list[float]] = []
-        scores: list[float] = []
-        classes: list[int] = []
-        for detection in detections:
+        parsed_scores: list[float] = []
+        parsed_classes: list[int] = []
+        for detection in detections or []:
             if int(detection.get("class_id", PERSON_CLASS_ID)) != PERSON_CLASS_ID:
                 continue
             bbox = [float(v) for v in detection["bbox_xyxy"]]
             if len(bbox) != 4:
                 raise ValueError("bbox_xyxy must contain [x1, y1, x2, y2]")
             boxes.append(bbox)
-            scores.append(float(detection["confidence"]))
-            classes.append(PERSON_CLASS_ID)
+            parsed_scores.append(float(detection["confidence"]))
+            parsed_classes.append(PERSON_CLASS_ID)
 
-        xyxy = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
-        self.xywh = np.column_stack(
+        self.xyxy = np.asarray(boxes, dtype=np.float32).reshape(-1, 4)
+        self.conf = np.asarray(parsed_scores, dtype=np.float32)
+        self.cls = np.asarray(parsed_classes, dtype=np.float32)
+        self.xywh = self._xyxy_to_xywh(self.xyxy)
+
+    @staticmethod
+    def _xyxy_to_xywh(xyxy: np.ndarray) -> np.ndarray:
+        if len(xyxy) == 0:
+            return np.empty((0, 4), dtype=np.float32)
+        return np.column_stack(
             (
                 (xyxy[:, 0] + xyxy[:, 2]) / 2,
                 (xyxy[:, 1] + xyxy[:, 3]) / 2,
@@ -58,8 +80,16 @@ class _DetectionBatch:
                 xyxy[:, 3] - xyxy[:, 1],
             )
         )
-        self.conf = np.asarray(scores, dtype=np.float32)
-        self.cls = np.asarray(classes, dtype=np.float32)
+
+    def __len__(self) -> int:
+        return len(self.conf)
+
+    def __getitem__(self, index: Any) -> "_DetectionBatch":
+        return _DetectionBatch(
+            xyxy=self.xyxy[index],
+            scores=self.conf[index],
+            classes=self.cls[index],
+        )
 
 
 class ByteTrackZoneProcessor:
@@ -97,15 +127,7 @@ class ByteTrackZoneProcessor:
 
     def update(self, detections: list[dict[str, Any]], zones: list[dict[str, Any]]) -> dict[str, Any]:
         tracked = self.tracker.update(_DetectionBatch(detections))
-        tracks = [
-            {
-                "id": int(row[4]),
-                "bbox_xyxy": [round(float(value), 2) for value in row[:4]],
-                "confidence": round(float(row[5]), 4),
-                "class_id": int(row[6]),
-            }
-            for row in tracked
-        ]
+        tracks = [_format_track(row) for row in tracked]
 
         parsed_zones = [Zone.from_dict(zone) for zone in zones]
         metrics = []
@@ -127,3 +149,20 @@ class ByteTrackZoneProcessor:
 def _foot_point(bbox: list[float]) -> Point:
     x1, _, x2, y2 = bbox
     return ((x1 + x2) / 2, y2)
+
+
+def _format_track(row: Any) -> dict[str, Any]:
+    if hasattr(row, "tlbr"):
+        return {
+            "id": int(getattr(row, "track_id")),
+            "bbox_xyxy": [round(float(value), 2) for value in row.tlbr],
+            "confidence": round(float(getattr(row, "score", 0)), 4),
+            "class_id": int(getattr(row, "cls", PERSON_CLASS_ID)),
+        }
+
+    return {
+        "id": int(row[4]),
+        "bbox_xyxy": [round(float(value), 2) for value in row[:4]],
+        "confidence": round(float(row[5]), 4),
+        "class_id": int(row[6]) if len(row) > 6 else PERSON_CLASS_ID,
+    }
