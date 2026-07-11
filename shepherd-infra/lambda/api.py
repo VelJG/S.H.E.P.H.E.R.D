@@ -15,6 +15,7 @@ from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource('dynamodb')
 s3_client = boto3.client('s3')
+sagemaker_runtime = boto3.client('sagemaker-runtime')
 
 VENUE_METRICS_TABLE = dynamodb.Table(os.environ['VENUE_METRICS_TABLE'])
 INCIDENTS_TABLE = dynamodb.Table(os.environ['INCIDENTS_TABLE'])
@@ -22,6 +23,7 @@ OPERATIONAL_TASKS_TABLE = dynamodb.Table(os.environ['OPERATIONAL_TASKS_TABLE'])
 CONFIG_ZONES_TABLE = dynamodb.Table(os.environ['CONFIG_ZONES_TABLE'])
 EVIDENCE_BUCKET_NAME = os.environ['EVIDENCE_BUCKET_NAME']
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL', '').strip()
+SAGEMAKER_ENDPOINT_NAME = os.environ.get('SAGEMAKER_ENDPOINT_NAME', '').strip()
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -41,6 +43,12 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return get_metrics_latest(event)
         if route_key == 'GET /uploads/presign':
             return get_upload_presign(event)
+        if route_key == 'POST /demo/infer-frame':
+            return post_demo_infer_frame(event)
+        if route_key == 'POST /demo/track':
+            return post_demo_track(event)
+        if route_key == 'POST /demo/reset':
+            return response(200, {'ok': True})
         if route_key == 'POST /incidents':
             return post_incident(event)
         if route_key == 'GET /incidents':
@@ -244,6 +252,115 @@ def text_value(value: Any, fallback: str = 'unknown') -> str:
     if value in (None, ''):
         return fallback
     return str(value)
+
+
+def event_headers(event: dict[str, Any]) -> dict[str, str]:
+    return {str(key).lower(): str(value) for key, value in (event.get('headers') or {}).items()}
+
+
+def raw_body_bytes(event: dict[str, Any]) -> bytes:
+    body = event.get('body') or ''
+    if event.get('isBase64Encoded'):
+        return base64.b64decode(body)
+    return body.encode('utf-8')
+
+
+def post_demo_infer_frame(event: dict[str, Any]) -> dict[str, Any]:
+    if not SAGEMAKER_ENDPOINT_NAME:
+        raise ValueError('SAGEMAKER_ENDPOINT_NAME is not configured')
+
+    headers = event_headers(event)
+    content_type = headers.get('content-type', '')
+    if not content_type.startswith('multipart/form-data'):
+        raise ValueError('Expected multipart/form-data with a file field')
+
+    invoke_response = sagemaker_runtime.invoke_endpoint(
+        EndpointName=SAGEMAKER_ENDPOINT_NAME,
+        Body=raw_body_bytes(event),
+        ContentType=content_type,
+        Accept='application/json',
+    )
+    payload = invoke_response['Body'].read().decode('utf-8')
+    return response(200, json.loads(payload))
+
+
+def post_demo_track(event: dict[str, Any]) -> dict[str, Any]:
+    payload = decode_body(event)
+    if not isinstance(payload, dict):
+        raise ValueError('Demo track payload must be an object')
+
+    detections = payload.get('detections') if isinstance(payload.get('detections'), list) else []
+    zones = payload.get('zones') if isinstance(payload.get('zones'), list) else []
+
+    tracks = []
+    for index, detection in enumerate(detections):
+        if int(detection.get('class_id', 0)) != 0:
+            continue
+        bbox = [round(float(value), 2) for value in detection.get('bbox_xyxy', [])[:4]]
+        if len(bbox) != 4:
+            continue
+        tracks.append({
+            'id': index + 1,
+            'track_id': index + 1,
+            'bbox_xyxy': bbox,
+            'confidence': round(float(detection.get('confidence', 0)), 4),
+            'class_id': 0,
+            'class_name': 'person',
+        })
+
+    metrics = []
+    for zone in zones:
+        zone_id = str(zone.get('id', 'unknown'))
+        points = parse_zone_points(zone.get('points'))
+        warn_at = int(zone.get('warnAt', zone.get('warn_at', 4)))
+        congest_at = int(zone.get('congestAt', zone.get('congest_at', 7)))
+        avg_service_sec = int(zone.get('avgServiceSec', zone.get('avg_service_sec', 20)))
+        count = sum(point_in_polygon(foot_point(track['bbox_xyxy']), points) for track in tracks)
+        status = 'congested' if count >= congest_at else 'warning' if count >= warn_at else 'normal'
+        metrics.append({
+            'zoneId': zone_id,
+            'personCount': count,
+            'queueLength': count,
+            'waitSec': count * avg_service_sec,
+            'status': status,
+        })
+
+    return response(200, {'tracks': tracks, 'zones': metrics})
+
+
+def parse_zone_points(value: Any) -> list[tuple[float, float]]:
+    points = []
+    if not isinstance(value, list):
+        return points
+    for point in value:
+        if isinstance(point, dict):
+            points.append((float(point['x']), float(point['y'])))
+        elif isinstance(point, list) and len(point) >= 2:
+            points.append((float(point[0]), float(point[1])))
+    return points
+
+
+def foot_point(bbox: list[float]) -> tuple[float, float]:
+    x1, _, x2, y2 = bbox
+    return ((x1 + x2) / 2, y2)
+
+
+def point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+    if len(polygon) < 3:
+        return False
+    x, y = point
+    inside = False
+    j = len(polygon) - 1
+    for i in range(len(polygon)):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        intersects = ((yi > y) != (yj > y)) and (
+            x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-9) + xi
+        )
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
 
 
 def discord_notification_payload(incident: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:

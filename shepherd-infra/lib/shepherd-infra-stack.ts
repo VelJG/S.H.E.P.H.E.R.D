@@ -19,6 +19,11 @@ export class ShepherdInfraStack extends cdk.Stack {
     super(scope, id, props);
 
     const prefix = 'aabw-';
+    const yoloImageTag = 'yolo-latest';
+    const processorImageTag = 'processor-latest';
+    const sagemakerEndpointName = `${prefix}shepherd-yolo-endpoint`;
+    const sagemakerEndpointConfigName = `${prefix}shepherd-yolo-endpoint-config-v1`;
+    const sagemakerModelName = `${prefix}shepherd-yolo-model-v1`;
 
     // 1. Private Amazon S3 frontend bucket
     const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
@@ -131,7 +136,7 @@ export class ShepherdInfraStack extends cdk.Stack {
       resources: [liveCameraStream.attrArn],
     }));
 
-    // 6. Amazon SageMaker AI placeholder resources
+    // 6. Amazon SageMaker AI endpoint for the YOLO inference image
     const sagemakerRole = new iam.Role(this, 'SageMakerRole', {
       roleName: `${prefix}shepherd-sagemaker-role`,
       assumedBy: new iam.ServicePrincipal('sagemaker.amazonaws.com'),
@@ -155,19 +160,23 @@ export class ShepherdInfraStack extends cdk.Stack {
 
     ecrRepo.grantPull(sagemakerRole);
 
-    // We point to a standard public AWS Deep Learning Container (DLC) image for scaffolding,
-    // as AWS SageMaker validates image existence upon Model creation.
-    // When you are ready to use your custom YOLO inference image, push it to ECR and update this URI.
-    const sagemakerModel = new sagemaker.CfnModel(this, 'SageMakerModelPlaceholder', {
-      modelName: `${prefix}shepherd-yolo-model`,
+    const sagemakerModel = new sagemaker.CfnModel(this, 'SageMakerModel', {
+      modelName: sagemakerModelName,
       executionRoleArn: sagemakerRole.roleArn,
       primaryContainer: {
-        image: `763104351884.dkr.ecr.${this.region}.amazonaws.com/pytorch-inference:2.0.0-cpu-py310`,
+        image: ecrRepo.repositoryUriForTag(yoloImageTag),
+        environment: {
+          MODEL_NAME: 'yolo26s.pt',
+          IMG_SIZE: '640',
+          CONF_THRES: '0.25',
+          DEVICE: 'auto',
+          YOLO_CONFIG_DIR: '/tmp/ultralytics',
+        },
       },
     });
 
-    const sagemakerEndpointConfig = new sagemaker.CfnEndpointConfig(this, 'SageMakerEndpointConfigPlaceholder', {
-      endpointConfigName: `${prefix}shepherd-yolo-endpoint-config`,
+    const sagemakerEndpointConfig = new sagemaker.CfnEndpointConfig(this, 'SageMakerEndpointConfig', {
+      endpointConfigName: sagemakerEndpointConfigName,
       productionVariants: [
         {
           initialInstanceCount: 1,
@@ -176,6 +185,11 @@ export class ShepherdInfraStack extends cdk.Stack {
           variantName: 'AllTraffic',
         },
       ],
+    });
+
+    const sagemakerEndpoint = new sagemaker.CfnEndpoint(this, 'SageMakerEndpoint', {
+      endpointName: sagemakerEndpointName,
+      endpointConfigName: sagemakerEndpointConfig.attrEndpointConfigName,
     });
 
     // 7. Amazon API Gateway HTTP API
@@ -188,6 +202,7 @@ export class ShepherdInfraStack extends cdk.Stack {
         allowOrigins: ['*'],
       },
     });
+    const apiBaseUrl = `https://${httpApi.ref}.execute-api.${this.region}.amazonaws.com`;
 
     // 8. Amazon DynamoDB on-demand tables
     const venueMetricsTable = new dynamodb.Table(this, 'VenueMetricsTable', {
@@ -264,7 +279,7 @@ export class ShepherdInfraStack extends cdk.Stack {
 
     processingTaskDefinition.addContainer('ProcessorContainer', {
       containerName: 'processor',
-      image: ecs.ContainerImage.fromEcrRepository(ecrRepo, 'latest'),
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepo, processorImageTag),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'processor',
         logGroup: processingLogGroup,
@@ -272,6 +287,11 @@ export class ShepherdInfraStack extends cdk.Stack {
       }),
       environment: {
         ENVIRONMENT: 'hackathon',
+        PROCESSOR_MODE: 'worker',
+        VIDEO_SOURCE: process.env.VIDEO_SOURCE ?? '',
+        BACKEND_API_URL: apiBaseUrl,
+        SAGEMAKER_ENDPOINT_NAME: sagemakerEndpointName,
+        AWS_REGION: this.region,
         VENUE_METRICS_TABLE: venueMetricsTable.tableName,
         INCIDENTS_TABLE: incidentsTable.tableName,
         OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
@@ -293,13 +313,14 @@ export class ShepherdInfraStack extends cdk.Stack {
       cluster: processingCluster,
       serviceName: `${prefix}shepherd-processor`,
       taskDefinition: processingTaskDefinition,
-      desiredCount: 0,
+      desiredCount: 1,
       minHealthyPercent: 0,
       circuitBreaker: { rollback: true },
       assignPublicIp: true,
       securityGroups: [processingServiceSecurityGroup],
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
+    processingService.node.addDependency(sagemakerEndpoint);
 
     venueMetricsTable.grantReadWriteData(processingTaskDefinition.taskRole);
     incidentsTable.grantReadWriteData(processingTaskDefinition.taskRole);
@@ -318,6 +339,11 @@ export class ShepherdInfraStack extends cdk.Stack {
       resources: [liveCameraStream.attrArn],
     }));
 
+    processingTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['sagemaker:InvokeEndpoint'],
+      resources: [`arn:aws:sagemaker:${this.region}:${this.account}:endpoint/${sagemakerEndpointName}`],
+    }));
+
     // 10. AWS Lambda function execution role
     const lambdaRole = new iam.Role(this, 'LambdaRole', {
       roleName: `${prefix}shepherd-lambda-role`,
@@ -332,6 +358,10 @@ export class ShepherdInfraStack extends cdk.Stack {
     operationalTasksTable.grantReadWriteData(lambdaRole);
     configZonesTable.grantReadWriteData(lambdaRole);
     evidenceBucket.grantReadWrite(lambdaRole);
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['sagemaker:InvokeEndpoint'],
+      resources: [`arn:aws:sagemaker:${this.region}:${this.account}:endpoint/${sagemakerEndpointName}`],
+    }));
 
     const healthLambda = new lambda.Function(this, 'HealthLambda', {
       functionName: `${prefix}shepherd-health-check`,
@@ -362,6 +392,7 @@ export class ShepherdInfraStack extends cdk.Stack {
         OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
         CONFIG_ZONES_TABLE: configZonesTable.tableName,
         EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
+        SAGEMAKER_ENDPOINT_NAME: sagemakerEndpointName,
         DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL ?? '',
       },
     });
@@ -400,6 +431,9 @@ export class ShepherdInfraStack extends cdk.Stack {
     createRoute('PostMetrics', 'POST /metrics', appApiIntegration);
     createRoute('GetMetricsLatest', 'GET /metrics/latest', appApiIntegration);
     createRoute('GetUploadsPresign', 'GET /uploads/presign', appApiIntegration);
+    createRoute('PostDemoInferFrame', 'POST /demo/infer-frame', appApiIntegration);
+    createRoute('PostDemoTrack', 'POST /demo/track', appApiIntegration);
+    createRoute('PostDemoReset', 'POST /demo/reset', appApiIntegration);
     createRoute('PostIncidents', 'POST /incidents', appApiIntegration);
     createRoute('GetIncidents', 'GET /incidents', appApiIntegration);
     createRoute('GetIncidentById', 'GET /incidents/{id}', appApiIntegration);
@@ -444,6 +478,16 @@ export class ShepherdInfraStack extends cdk.Stack {
       description: 'ECR Repository URI',
     });
 
+    new cdk.CfnOutput(this, 'YoloImageUri', {
+      value: ecrRepo.repositoryUriForTag(yoloImageTag),
+      description: 'YOLO inference image URI used by SageMaker',
+    });
+
+    new cdk.CfnOutput(this, 'ProcessorImageUri', {
+      value: ecrRepo.repositoryUriForTag(processorImageTag),
+      description: 'Stream processor image URI used by ECS Fargate',
+    });
+
     new cdk.CfnOutput(this, 'KinesisVideoStreamName', {
       value: liveCameraStream.name!,
       description: 'Kinesis Video Stream name for live camera ingest',
@@ -477,6 +521,11 @@ export class ShepherdInfraStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ProcessingTaskFamily', {
       value: processingTaskDefinition.family,
       description: 'ECS task definition family for the SHEPHERD processing worker',
+    });
+
+    new cdk.CfnOutput(this, 'SageMakerEndpointName', {
+      value: sagemakerEndpointName,
+      description: 'SageMaker endpoint name for YOLO inference',
     });
 
     new cdk.CfnOutput(this, 'VenueMetricsTableName', {

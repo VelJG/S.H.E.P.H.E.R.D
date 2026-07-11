@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,11 @@ from urllib.parse import quote
 
 import cv2
 import requests
+
+try:
+    import boto3
+except ImportError:  # keeps local HTTP-only runs usable without boto3 installed
+    boto3 = None
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 if str(SERVICE_ROOT) not in sys.path:
@@ -71,6 +77,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--source", default=os.getenv("VIDEO_SOURCE", "samples/videos/sample.mp4"))
     parser.add_argument("--yolo-url", default=os.getenv("YOLO_INFERENCE_URL", "http://localhost:8080/invocations"))
+    parser.add_argument("--sagemaker-endpoint", default=os.getenv("SAGEMAKER_ENDPOINT_NAME", ""))
     parser.add_argument("--backend-url", default=os.getenv("BACKEND_API_URL", ""))
     parser.add_argument("--zones-file", default=os.getenv("ZONES_FILE", ""))
     parser.add_argument("--zone-refresh-sec", type=float, default=float_env("ZONE_REFRESH_SEC", 10))
@@ -100,20 +107,60 @@ def open_capture(source: str) -> cv2.VideoCapture:
     return cap
 
 
-def post_frame(url: str, frame, jpeg_quality: int) -> tuple[dict[str, Any], float]:
+def encode_frame_jpeg(frame, jpeg_quality: int) -> bytes:
     ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
     if not ok:
         raise RuntimeError("Failed to encode frame as JPEG")
+    return buffer.tobytes()
 
+
+def post_frame_http(url: str, frame, jpeg_quality: int) -> tuple[dict[str, Any], float]:
+    image_bytes = encode_frame_jpeg(frame, jpeg_quality)
     started_at = time.perf_counter()
     response = requests.post(
         url,
-        files={"file": ("frame.jpg", buffer.tobytes(), "image/jpeg")},
+        files={"file": ("frame.jpg", image_bytes, "image/jpeg")},
         timeout=30,
     )
     response.raise_for_status()
     end_to_end_ms = (time.perf_counter() - started_at) * 1000
     return response.json(), end_to_end_ms
+
+
+def make_multipart_file_body(image_bytes: bytes) -> tuple[bytes, str]:
+    boundary = f"----shepherd-{uuid.uuid4().hex}"
+    body = b"".join([
+        f"--{boundary}\r\n".encode("utf-8"),
+        b'Content-Disposition: form-data; name="file"; filename="frame.jpg"\r\n',
+        b"Content-Type: image/jpeg\r\n\r\n",
+        image_bytes,
+        f"\r\n--{boundary}--\r\n".encode("utf-8"),
+    ])
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+def post_frame_sagemaker(endpoint_name: str, frame, jpeg_quality: int, runtime_client: Any) -> tuple[dict[str, Any], float]:
+    image_bytes = encode_frame_jpeg(frame, jpeg_quality)
+    body, content_type = make_multipart_file_body(image_bytes)
+
+    started_at = time.perf_counter()
+    response = runtime_client.invoke_endpoint(
+        EndpointName=endpoint_name,
+        Body=body,
+        ContentType=content_type,
+        Accept="application/json",
+    )
+    response_body = response["Body"].read()
+    end_to_end_ms = (time.perf_counter() - started_at) * 1000
+    return json.loads(response_body.decode("utf-8")), end_to_end_ms
+
+
+def create_sagemaker_runtime_client(endpoint_name: str) -> Any:
+    if not endpoint_name:
+        return None
+    if boto3 is None:
+        raise RuntimeError("boto3 is required when SAGEMAKER_ENDPOINT_NAME is set")
+    return boto3.client("sagemaker-runtime")
 
 
 def normalize_backend_url(backend_url: str) -> str:
@@ -191,10 +238,7 @@ def post_metrics(backend_url: str, zones: list[dict[str, Any]], frame_index: int
 
 
 def encode_jpeg(frame, jpeg_quality: int) -> bytes:
-    ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality])
-    if not ok:
-        raise RuntimeError("Failed to encode evidence frame as JPEG")
-    return buffer.tobytes()
+    return encode_frame_jpeg(frame, jpeg_quality)
 
 
 def upload_evidence(
@@ -321,6 +365,7 @@ def main() -> None:
     cap = open_capture(args.source)
     file_source = is_file_source(args.source)
     processor = ByteTrackZoneProcessor(frame_rate=args.track_frame_rate)
+    sagemaker_runtime_client = create_sagemaker_runtime_client(args.sagemaker_endpoint)
 
     source_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     source_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1280)
@@ -347,7 +392,8 @@ def main() -> None:
 
     print(
         f"source={args.source} source_fps={source_fps:.2f} total_frames={total_frames} "
-        f"yolo_url={args.yolo_url} backend_url={args.backend_url or '<disabled>'} "
+        f"yolo_url={args.yolo_url} sagemaker_endpoint={args.sagemaker_endpoint or '<disabled>'} "
+        f"backend_url={args.backend_url or '<disabled>'} "
         f"interval_ms={args.interval_ms} fallback_ms={args.fallback_ms} policy={args.policy}"
     )
 
@@ -374,7 +420,15 @@ def main() -> None:
                 frame_index += 1
                 continue
 
-            yolo_response, end_to_end_ms = post_frame(args.yolo_url, frame, args.jpeg_quality)
+            if args.sagemaker_endpoint:
+                yolo_response, end_to_end_ms = post_frame_sagemaker(
+                    args.sagemaker_endpoint,
+                    frame,
+                    args.jpeg_quality,
+                    sagemaker_runtime_client,
+                )
+            else:
+                yolo_response, end_to_end_ms = post_frame_http(args.yolo_url, frame, args.jpeg_quality)
             detections = yolo_response.get("detections", [])
             yolo_latency_ms = yolo_response.get("latency_ms")
             tracked = processor.update(detections, zones)

@@ -45,4 +45,18 @@ COPY scripts ./scripts
 
 EXPOSE 8090
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8090"]
+RUN printf '%s\n' \
+    '#!/usr/bin/env sh' \
+    'set -eu' \
+    'if [ "${PROCESSOR_MODE:-api}" = "worker" ]; then' \
+    '  if [ -z "${VIDEO_SOURCE:-}" ]; then' \
+    '    echo "PROCESSOR_MODE=worker but VIDEO_SOURCE is empty; running standby loop."' \
+    '    while true; do sleep 300; done' \
+    '  fi' \
+    '  exec python scripts/run-detection-loop.py' \
+    'fi' \
+    'exec uvicorn app.main:app --host 0.0.0.0 --port 8090' \
+    > /usr/local/bin/processor-entrypoint \
+    && chmod +x /usr/local/bin/processor-entrypoint
+
+CMD ["/usr/local/bin/processor-entrypoint"]
