@@ -3,6 +3,7 @@ import type { Frame, Incident, Track, Zone, ZoneMetric, ZoneStatus } from '../ty
 import { TemporalHeatmap } from './temporalHeatmap';
 
 const env = (import.meta as any).env ?? {};
+const API_URL = env.VITE_API_URL || '';
 const YOLO_URL = env.VITE_YOLO_URL || '/api/yolo/invocations';
 const TRACK_URL = env.VITE_TRACKER_URL || '/api/tracker/track';
 const RESET_URL = TRACK_URL.replace(/\/track\/?$/, '/reset');
@@ -133,6 +134,37 @@ export function useLiveData(
           heatMax: temporal?.heatMax ?? 0,
           activeTrackIds: temporal?.activeTrackIds ?? [],
         };
+      }
+
+      if (heat.alerts.length && API_URL) {
+        for (const zoneId of heat.alerts) {
+          const zone = activeZones.find((item) => item.id === zoneId);
+          const metric = nextMetrics[zoneId];
+          void fetch(`${API_URL}/incidents`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              zoneId,
+              type: 'congestion',
+              severity: 'high',
+              title: 'Hottest zone detected',
+              summary: `${zone?.name ?? zoneId} is crowded and requires attention.`,
+              personCount: metric?.personCount ?? 0,
+              createdAt: new Date().toISOString(),
+              notifyDiscord: true,
+              metrics: {
+                personCount: metric?.personCount ?? 0,
+                waitSec: metric?.waitSec ?? 0,
+                status: metric?.status ?? 'congested',
+                heatMean: metric?.heatMean ?? 0,
+                heatMax: metric?.heatMax ?? 0,
+                activeTrackIds: metric?.activeTrackIds ?? [],
+              },
+            }),
+          }).catch(() => {
+            /* local incident still appears; backend/Discord can recover on next alert */
+          });
+        }
       }
 
       if (heat.alerts.length) setIncidents((previous) => {

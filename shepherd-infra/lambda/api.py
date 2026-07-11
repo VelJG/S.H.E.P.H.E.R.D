@@ -5,7 +5,9 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from urllib import error as urlerror
 from urllib.parse import unquote_plus
+from urllib.request import Request, urlopen
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -19,6 +21,7 @@ INCIDENTS_TABLE = dynamodb.Table(os.environ['INCIDENTS_TABLE'])
 OPERATIONAL_TASKS_TABLE = dynamodb.Table(os.environ['OPERATIONAL_TASKS_TABLE'])
 CONFIG_ZONES_TABLE = dynamodb.Table(os.environ['CONFIG_ZONES_TABLE'])
 EVIDENCE_BUCKET_NAME = os.environ['EVIDENCE_BUCKET_NAME']
+DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL', '').strip()
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -237,6 +240,80 @@ def sorted_desc(items: list[dict[str, Any]], field: str) -> list[dict[str, Any]]
     return sorted(items, key=lambda item: str(item.get(field, '')), reverse=True)
 
 
+def text_value(value: Any, fallback: str = 'unknown') -> str:
+    if value in (None, ''):
+        return fallback
+    return str(value)
+
+
+def discord_notification_payload(incident: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    metrics = incident.get('metrics', {})
+    if not isinstance(metrics, dict):
+        metrics = {}
+
+    zone_id = text_value(incident.get('zoneId'))
+    severity = text_value(incident.get('severity'), 'medium')
+    person_count = text_value(
+        incident.get('personCount', metrics.get('personCount', metrics.get('queueLength', 'n/a'))),
+        'n/a',
+    )
+    status = text_value(metrics.get('status', incident.get('status')), 'open')
+    wait_sec = text_value(metrics.get('waitSec'), 'n/a')
+
+    return {
+        'username': 'SHEPHERD Alerts',
+        'content': f'Congestion detected in `{zone_id}`.',
+        'allowed_mentions': {'parse': []},
+        'embeds': [
+            {
+                'title': 'Hottest Zone Alert',
+                'description': text_value(incident.get('summary'), 'A monitored zone is crowded and requires attention.'),
+                'color': 15620935,
+                'fields': [
+                    {'name': 'Zone', 'value': zone_id, 'inline': True},
+                    {'name': 'Severity', 'value': severity, 'inline': True},
+                    {'name': 'People', 'value': person_count, 'inline': True},
+                    {'name': 'Status', 'value': status, 'inline': True},
+                    {'name': 'Wait', 'value': f'{wait_sec}s' if wait_sec != 'n/a' else 'n/a', 'inline': True},
+                    {'name': 'Task', 'value': text_value(task.get('taskId')), 'inline': True},
+                ],
+                'footer': {'text': f"Incident {text_value(incident.get('incidentId'))}"},
+                'timestamp': text_value(incident.get('createdAt'), now_iso()),
+            },
+        ],
+    }
+
+
+def send_discord_incident_notification(incident: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    if not DISCORD_WEBHOOK_URL:
+        return {'status': 'skipped', 'reason': 'DISCORD_WEBHOOK_URL not configured'}
+
+    payload = discord_notification_payload(incident, task)
+    data = json.dumps(payload, default=json_default).encode('utf-8')
+    request = Request(
+        DISCORD_WEBHOOK_URL,
+        data=data,
+        headers={
+            'Content-Type': 'application/json',
+            'User-Agent': 'SHEPHERD-Lambda/0.1',
+        },
+        method='POST',
+    )
+
+    try:
+        with urlopen(request, timeout=5) as result:
+            return {'status': 'sent', 'statusCode': result.status}
+    except urlerror.HTTPError as exc:
+        print(f'Discord notification failed with HTTP {exc.code}')
+        return {'status': 'failed', 'statusCode': exc.code}
+    except urlerror.URLError as exc:
+        print(f'Discord notification failed: {exc.reason}')
+        return {'status': 'failed', 'reason': str(exc.reason)}
+    except Exception as exc:
+        print(f'Discord notification failed: {type(exc).__name__}')
+        return {'status': 'failed', 'reason': type(exc).__name__}
+
+
 def get_config_zones() -> dict[str, Any]:
     item = CONFIG_ZONES_TABLE.get_item(Key={'configId': 'default'}).get('Item', {})
     # `or` (not dict default) so a stored NULL frameWidth still falls back to
@@ -402,10 +479,17 @@ def post_incident(event: dict[str, Any]) -> dict[str, Any]:
     }
     OPERATIONAL_TASKS_TABLE.put_item(Item=to_dynamo_value(task_item))
 
+    discord_notification = (
+        {'status': 'skipped', 'reason': 'notifyDiscord disabled'}
+        if payload.get('notifyDiscord') is False
+        else send_discord_incident_notification(incident_item, task_item)
+    )
+
     return response(201, {
         'message': 'Incident created',
         'incident': incident_item,
         'task': task_item,
+        'discordNotification': discord_notification,
     })
 
 

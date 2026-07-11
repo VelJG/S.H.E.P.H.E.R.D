@@ -362,6 +362,7 @@ export class ShepherdInfraStack extends cdk.Stack {
         OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
         CONFIG_ZONES_TABLE: configZonesTable.tableName,
         EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
+        DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL ?? '',
       },
     });
 
