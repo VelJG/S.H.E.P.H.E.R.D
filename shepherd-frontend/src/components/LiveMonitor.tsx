@@ -21,7 +21,7 @@ function timeAgo(ts: number): string {
 
 const OTHER_CAMS = [
   { id: 'CAM-01', name: 'Entrance' },
-  { id: 'CAM-02', name: 'Booth 1' },
+  { id: 'CAM-02', name: 'Hall' },
   { id: 'CAM-04', name: 'Exit' },
   { id: 'CAM-05', name: 'Lobby' },
 ];
@@ -70,7 +70,7 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
               <span className="ov-live__txt">LIVE</span>
             </div>
             <div className="ov ov-res">{frame.width} x {frame.height} - 15fps</div>
-            <div className="ov ov-cam">CAM-03 - Booth 2</div>
+            <div className="ov ov-cam">CAM-03 - Main</div>
             <div className="ov ov-time">{today} {clock}</div>
           </div>
 

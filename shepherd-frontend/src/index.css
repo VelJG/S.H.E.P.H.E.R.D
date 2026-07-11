@@ -169,9 +169,49 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-body);
 .dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
 .zonecard__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
 .zonecard__grid label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
-.input { background: #0a1420; border: 1px solid var(--border-2); color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: var(--font-body); }
-.input--flush { flex: 1; background: transparent; border: 0; font-weight: 600; font-size: 14px; }
-.input--num { padding: 5px 6px; width: 100%; }
+.input { background: #0a0e14; border: 1px solid #2b3038; color: var(--text); border-radius: 8px; padding: 9px 12px; font-size: 13px; font-family: var(--font-body); }
+.input:focus { outline: none; border-color: var(--blue); }
+.input--flush { flex: 1; min-width: 0; background: transparent; border: 0; font-weight: 600; font-size: 13.5px; }
+.input--num { padding: 6px; width: 100%; }
+
+/* hint bar + draw toggle */
+.hintbar { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--border-2); border-radius: 10px; padding: 11px 14px; }
+.hintbar__text { font-size: 12.5px; color: #c5cbd3; }
+.hintbar__right { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+.drawtoggle { font: 400 11px var(--font-display); letter-spacing: .06em; padding: 4px 12px; border-radius: 999px; cursor: pointer; border: 1px solid #2b3038; background: #1c222c; color: #c5cbd3; }
+.drawtoggle--on { border-color: var(--blue); background: var(--blue); color: #08090b; }
+
+/* stage overlay label */
+.editlabel { top: 11px; left: 11px; font: 500 11px var(--font-mono); color: #d4dae2; background: rgba(8,9,11,.6); padding: 4px 9px; border-radius: 7px; }
+
+/* name popup (shown when confirming a zone) */
+.namepop { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(8,9,11,.55); }
+.namepop__card { background: var(--card); border: 1px solid var(--border-2); border-radius: 12px; padding: 16px; width: min(360px, 82%); display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 50px -20px rgba(0,0,0,.9); }
+.namepop__title { font: 600 11px var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.namepop__actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* zone cards */
+.zonecard { background: var(--panel); border: 1px solid var(--border-2); border-radius: 10px; padding: 11px; cursor: pointer; }
+.zonecard--sel { border-color: var(--blue); box-shadow: inset 0 0 0 0.5px var(--blue); }
+.zonecard__pts { font: 500 10px var(--font-mono); color: var(--muted-2); flex: none; }
+.zonecard__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 10px; }
+.zonecard__grid label { font-size: 10.5px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.btn--icon { padding: 2px 6px; background: transparent; border: 0; color: var(--muted); font-size: 14px; }
+.btn--icon:hover { color: var(--text); }
+
+/* empty state */
+.zempty { border: 1px dashed #2b3038; border-radius: 10px; padding: 22px 14px; text-align: center; font-size: 12.5px; color: #868d97; line-height: 1.6; }
+.zempty b { color: #c5cbd3; }
+
+/* save button + hint */
+.savebtn { margin-top: 4px; font: 400 13px var(--font-display); letter-spacing: .04em; padding: 10px 15px; border-radius: 8px; cursor: pointer; border: 1px solid var(--blue); background: var(--blue); color: #08090b; }
+.savebtn:hover:not(:disabled) { filter: brightness(1.08); }
+.savebtn:disabled { background: #141821; border-color: #2b3038; color: var(--muted-2); cursor: not-allowed; }
+.savebtn--saving:disabled { background: var(--blue); border-color: var(--blue); color: #08090b; opacity: .8; cursor: progress; }
+.savebtn--saved { background: var(--green); border-color: var(--green); color: #08090b; }
+.savebtn--error { background: var(--red); border-color: var(--red); color: #08090b; }
+.savehint { font-size: 11px; color: var(--muted); margin: 2px 0 0; line-height: 1.5; }
+
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
