@@ -19,6 +19,8 @@ result = processor.update(
 )
 ```
 
-`result["tracks"]` contains persistent `id` values and bounding boxes.
-`result["zones"]` contains `personCount`, `waitSec`, and `status`.
+`result["tracks"]` contains persistent `track_id` values and bounding boxes.
+It also returns `id` as an alias so the browser demo can consume the same
+response without an adapter.
+`result["zones"]` contains `personCount`, `queueLength`, `waitSec`, and `status`.
 The zone count uses each person's bottom-center bbox point.

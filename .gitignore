@@ -30,6 +30,7 @@ aws_credentials*
 *.weights
 
 # Media and generated outputs
+runs/
 *.mp4
 *.mov
 *.avi

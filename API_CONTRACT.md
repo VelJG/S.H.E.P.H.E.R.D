@@ -60,6 +60,35 @@ Body / response shape:
 | GET | `/uploads/presign` **[MVP]** | Get presigned S3 PUT URL for a congestion screenshot |
 | POST | `/incidents` **[MVP]** | Create incident and auto-create one response task |
 
+Tracker output shape used by the browser demo and stream processor:
+
+```json
+{
+  "tracks": [
+    {
+      "id": 7,
+      "track_id": 7,
+      "class_id": 0,
+      "class_name": "person",
+      "confidence": 0.91,
+      "bbox_xyxy": [120, 80, 260, 430]
+    }
+  ],
+  "zones": [
+    {
+      "zoneId": "booth-2",
+      "personCount": 8,
+      "queueLength": 8,
+      "waitSec": 160,
+      "status": "congested"
+    }
+  ]
+}
+```
+
+`track_id` is canonical. `id` is a compatibility alias for frontend rendering
+and heatmap logic.
+
 Preferred metrics payload:
 
 ```json
@@ -100,13 +129,19 @@ Response:
 Processor uploads the screenshot directly to S3 using `uploadUrl`, then sends
 the returned `key` as the incident evidence reference.
 
+The stream processor creates incidents only when a zone transitions into
+`congested` status. Repeated incidents for the same zone are throttled by
+`INCIDENT_COOLDOWN_SEC`.
+
 Incident payload:
 
 ```json
 {
   "zoneId": "booth-2",
   "type": "congestion",
+  "title": "Congestion detected",
   "severity": "high",
+  "summary": "Zone booth-2 entered congested status with 8 people and estimated wait 160s.",
   "personCount": 8,
   "evidenceKey": "incidents/uuid-booth-2.jpg",
   "createdAt": "2026-07-11T14:03:22Z",
