@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { Frame, Point, Track, Zone, ZoneMetric, ZoneStatus } from '../types';
+import type { Frame, Point, Zone, ZoneMetric, ZoneStatus } from '../types';
 import { polygonPath } from '../lib/geometry';
 
 const STATUS_COLOR: Record<ZoneStatus, string> = {
@@ -7,12 +7,10 @@ const STATUS_COLOR: Record<ZoneStatus, string> = {
   warning: '#d6a743',
   congested: '#ef5b47',
 };
-const DETECT = '#4c9aff';
 
 type Props = {
   zones: Zone[];
   frame: Frame;
-  tracks?: Track[];
   metrics?: Record<string, ZoneMetric>;
   mode: 'live' | 'editor';
   draft?: Point[];
@@ -20,11 +18,6 @@ type Props = {
   onStageClick?: (p: Point) => void;
   onSelectZone?: (id: string) => void;
 };
-
-/** Stable per-track detection confidence, just for the CCTV look. */
-function conf(id: number): string {
-  return (0.86 + ((id * 37) % 12) / 100).toFixed(2);
-}
 
 function bbox(poly: Point[]) {
   const xs = poly.map((p) => p.x);
@@ -35,7 +28,6 @@ function bbox(poly: Point[]) {
 export default function CameraStage({
   zones,
   frame,
-  tracks = [],
   metrics,
   mode,
   draft = [],
@@ -46,8 +38,6 @@ export default function CameraStage({
   const W = frame.width;
   const H = frame.height;
   const s = Math.max(W, H) / 1000;
-  const boxW = W * 0.06;
-  const boxH = H * 0.26;
 
   // Map a screen click back to ORIGINAL IMAGE PIXELS regardless of CSS resize.
   const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -58,17 +48,20 @@ export default function CameraStage({
     onStageClick({ x: Math.max(0, Math.min(W, Math.round(x))), y: Math.max(0, Math.min(H, Math.round(y))) });
   };
 
+  const isVideo = frame.kind === 'video' && !!frame.url;
+
   return (
     <svg
       className={`stage ${mode === 'editor' && onStageClick ? 'stage--editor' : ''}`}
       viewBox={`0 0 ${W} ${H}`}
-      style={{ aspectRatio: `${W} / ${H}`, fontFamily: 'var(--font-body)' }}
+      // transparent when a <video> backdrop is rendered behind the SVG by the feed
+      style={{ aspectRatio: `${W} / ${H}`, fontFamily: 'var(--font-body)', background: isVideo ? 'transparent' : undefined }}
       preserveAspectRatio="none"
       onClick={handleClick}
       role="img"
       aria-label="Camera feed with monitoring zones"
     >
-      {frame.url ? (
+      {isVideo ? null : frame.url ? (
         <image href={frame.url} x={0} y={0} width={W} height={H} preserveAspectRatio="none" />
       ) : (
         <BuiltInScene w={W} h={H} />
@@ -161,23 +154,6 @@ export default function CameraStage({
         </g>
       )}
 
-      {/* Detection bounding boxes */}
-      {mode === 'live' &&
-        tracks.map((t) => {
-          const x = Math.max(2, Math.min(W - boxW - 2, t.x - boxW / 2));
-          const y = Math.max(2, Math.min(H - boxH - 2, t.y - boxH / 2));
-          return (
-            <g key={t.id}>
-              <rect x={x} y={y} width={boxW} height={boxH} rx={3 * s} fill="none" stroke={DETECT} strokeWidth={1.6 * s} />
-              <g transform={`translate(${x}, ${y - 17 * s}) scale(${s})`}>
-                <rect x={0} y={0} width={78} height={16} rx={3} fill={DETECT} />
-                <text x={5} y={12} fill="#08090b" fontFamily="OCRAM Regular, monospace" fontSize={10} fontWeight={600}>
-                  Person {conf(t.id)}
-                </text>
-              </g>
-            </g>
-          );
-        })}
     </svg>
   );
 }

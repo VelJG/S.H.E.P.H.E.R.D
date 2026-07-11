@@ -83,7 +83,9 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-body);
 
 /* ---------- Feed ---------- */
 .feed { position: relative; aspect-ratio: 16 / 9; border-radius: 11px; overflow: hidden; border: 1px solid var(--border-2); }
-.feed .stage { width: 100%; height: 100%; display: block; border: 0; border-radius: 0; }
+.feed .stage { width: 100%; height: 100%; display: block; border: 0; border-radius: 0; position: relative; z-index: 1; }
+/* uploaded video backdrop — object-fit:fill matches the SVG's preserveAspectRatio="none" so zones align pixel-for-pixel */
+.feedvideo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; background: #0c1421; z-index: 0; }
 .ov { position: absolute; pointer-events: none; }
 .ov-live { top: 11px; left: 11px; display: flex; align-items: center; gap: 7px; background: rgba(8,9,11,.72); padding: 4px 10px; border-radius: 7px; }
 .ov-live__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }

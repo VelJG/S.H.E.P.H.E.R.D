@@ -6,8 +6,9 @@
 export const DEFAULT_FRAME_W = 1280;
 export const DEFAULT_FRAME_H = 720;
 
-/** The camera frame the zones are drawn against. */
-export type Frame = { width: number; height: number; url: string | null };
+/** The camera frame the zones are drawn against. `kind` decides the backdrop:
+ *  a still image, a looping uploaded video, or the built-in scene (url null). */
+export type Frame = { width: number; height: number; url: string | null; kind?: 'image' | 'video' };
 
 export type Point = { x: number; y: number };
 
@@ -25,14 +26,6 @@ export type Zone = {
   congestAt: number;
   /** average seconds to serve one person, used to estimate wait time */
   avgServiceSec: number;
-};
-
-/** A tracked person on the stage (from YOLO + ByteTrack, or simulated). */
-export type Track = {
-  id: number;
-  x: number;
-  y: number;
-  trail: Point[];
 };
 
 /** Live measurement for a single zone at one tick. */

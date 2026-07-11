@@ -90,9 +90,17 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
     const f = e.target.files?.[0];
     if (!f) return;
     const url = URL.createObjectURL(f);
-    const img = new Image();
-    img.onload = () => setFrame({ width: img.naturalWidth, height: img.naturalHeight, url });
-    img.src = url;
+    if (f.type.startsWith('video/')) {
+      // read the video's native resolution -> canonical coordinate system
+      const v = document.createElement('video');
+      v.onloadedmetadata = () =>
+        setFrame({ width: v.videoWidth, height: v.videoHeight, url, kind: 'video' });
+      v.src = url;
+    } else {
+      const img = new Image();
+      img.onload = () => setFrame({ width: img.naturalWidth, height: img.naturalHeight, url, kind: 'image' });
+      img.src = url;
+    }
   };
 
   const saveZones = async () => {
@@ -153,6 +161,9 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
 
           {/* stage */}
           <div className="feed">
+            {frame.kind === 'video' && frame.url && (
+              <video className="feedvideo" src={frame.url} autoPlay loop muted playsInline />
+            )}
             <CameraStage
               zones={zones}
               frame={frame}
@@ -162,7 +173,7 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
               onStageClick={drawMode && !naming ? addPoint : undefined}
               onSelectZone={setSelectedId}
             />
-            <div className="ov editlabel">EDIT · {frame.width} × {frame.height}</div>
+            <div className="ov editlabel">EDIT · {frame.width} × {frame.height}{frame.kind === 'video' ? ' · video' : ''}</div>
 
             {/* name popup — appears when confirming a zone */}
             {naming && (
@@ -200,9 +211,9 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
             <button className="btn" disabled={!draft.length && !naming} onClick={cancelDraft}>
               Cancel · Q
             </button>
-            <input id="frameUpload" type="file" accept="image/*" hidden onChange={onUpload} />
+            <input id="frameUpload" type="file" accept="image/*,video/*" hidden onChange={onUpload} />
             <button className="btn" onClick={() => document.getElementById('frameUpload')?.click()}>
-              Upload frame
+              Upload frame / video
             </button>
             {frame.url && (
               <button className="btn" onClick={() => setFrame({ width: 1280, height: 720, url: null })}>

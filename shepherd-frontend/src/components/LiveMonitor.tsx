@@ -1,6 +1,6 @@
 import type { Frame, Incident, Zone, ZoneMetric, ZoneStatus } from '../types';
 import CameraStage from './CameraStage';
-import { useSimulation } from '../lib/useSimulation';
+import { useLiveData } from '../lib/useLiveData';
 
 const STATUS_COLOR: Record<ZoneStatus, string> = {
   normal: '#46c06a',
@@ -29,15 +29,15 @@ const OTHER_CAMS = [
 type Props = { zones: Zone[]; frame: Frame; clock: string };
 
 export default function LiveMonitor({ zones, frame, clock }: Props) {
-  const sim = useSimulation(zones, frame.width, frame.height);
+  const live = useLiveData(zones);
   const metricList: ZoneMetric[] = zones.map(
-    (z) => sim.metrics[z.id] ?? { zoneId: z.id, personCount: 0, waitSec: 0, status: 'normal' },
+    (z) => live.metrics[z.id] ?? { zoneId: z.id, personCount: 0, waitSec: 0, status: 'normal' },
   );
   const busiest = metricList.reduce(
     (a, b) => (b.personCount > a.personCount ? b : a),
     metricList[0] ?? { zoneId: '', personCount: 0, waitSec: 0, status: 'normal' as ZoneStatus },
   );
-  const openIncidents = sim.incidents.filter((i) => i.status !== 'resolved');
+  const openIncidents = live.incidents.filter((i) => i.status !== 'resolved');
   const longestWait = Math.max(0, ...metricList.map((m) => m.waitSec));
   const inZones = metricList.reduce((a, m) => a + m.personCount, 0);
   const today = new Date().toISOString().slice(0, 10);
@@ -47,9 +47,9 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
       <div className="spotlight__body">
         <div className="center">
           <div className="tiles">
-            <Tile label="People on camera" value={String(sim.tracks.length)} delta={`${inZones} in zones`} />
+            <Tile label="People in zones" value={String(inZones)} delta={`${zones.length} zones`} />
             <Tile
-              label="Busiest booth"
+              label="Busiest zone"
               value={zones.find((z) => z.id === busiest.zoneId)?.name ?? 'None'}
               delta={`${busiest.personCount}`}
               color={STATUS_COLOR[busiest.status]}
@@ -64,10 +64,13 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
           </div>
 
           <div className="feed">
-            <CameraStage zones={zones} frame={frame} tracks={sim.tracks} metrics={sim.metrics} mode="live" />
+            {frame.kind === 'video' && frame.url && (
+              <video className="feedvideo" src={frame.url} autoPlay loop muted playsInline />
+            )}
+            <CameraStage zones={zones} frame={frame} metrics={live.metrics} mode="live" />
             <div className="ov ov-live">
-              <span className="ov-live__dot rec" />
-              <span className="ov-live__txt">LIVE</span>
+              <span className="ov-live__dot rec" style={{ background: live.connected ? '#ef5b47' : '#565c65' }} />
+              <span className="ov-live__txt">{live.connected ? 'LIVE' : 'OFFLINE'}</span>
             </div>
             <div className="ov ov-res">{frame.width} x {frame.height} - 15fps</div>
             <div className="ov ov-cam">CAM-03 - Main</div>
@@ -75,10 +78,17 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
           </div>
 
           <div className="livebar">
-            <span className="livebar__pill"><span className="livebar__dot blink" />LIVE</span>
-            <button className="btn pausebtn" onClick={() => sim.setRunning(!sim.running)}>
-              {sim.running ? 'Pause' : 'Resume'}
+            <span className="livebar__pill" style={{ background: live.connected ? '#ef5b47' : '#565c65' }}>
+              <span className="livebar__dot blink" />{live.connected ? 'LIVE' : 'NO API'}
+            </span>
+            <button className="btn pausebtn" onClick={() => live.setRunning(!live.running)}>
+              {live.running ? 'Pause' : 'Resume'}
             </button>
+            {!live.connected && (
+              <span className="muted small" style={{ marginLeft: 10 }}>
+                Waiting for backend — set VITE_API_URL and run the processor.
+              </span>
+            )}
           </div>
 
           <div className="camstrip">
@@ -94,8 +104,9 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
         <aside className="rail">
           <span className="rail__label">ZONES</span>
           <div className="zoneslist">
+            {zones.length === 0 && <p className="muted small">No zones defined. Draw them in the Zone Editor.</p>}
             {zones.map((z) => {
-              const m = sim.metrics[z.id];
+              const m = live.metrics[z.id];
               const st = m?.status ?? 'normal';
               return (
                 <div key={z.id} className="zonerow">
@@ -110,17 +121,17 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
             })}
           </div>
 
-          <ActivityChart history={sim.history} />
+          <ActivityChart history={live.history} />
 
           <div className="rail__head">
             <span className="rail__label">EVENTS</span>
             {openIncidents.length > 0 && <span className="rail__new">{openIncidents.length} NEW</span>}
           </div>
-          {sim.incidents.length === 0 && (
-            <p className="muted small">No incidents yet. Waiting for a booth to get congested...</p>
+          {live.incidents.length === 0 && (
+            <p className="muted small">No incidents. They appear when the processor reports congestion.</p>
           )}
-          {sim.incidents.map((i) => (
-            <EventCard key={i.id} inc={i} onAck={sim.ackIncident} onResolve={sim.resolveIncident} />
+          {live.incidents.map((i) => (
+            <EventCard key={i.id} inc={i} onAck={live.ackIncident} onResolve={live.resolveIncident} />
           ))}
         </aside>
       </div>
@@ -177,8 +188,8 @@ function EventCard({
   );
 }
 
-function ActivityChart({ history }: { history: { counts: Record<string, number> }[] }) {
-  const totals = history.map((h) => Object.values(h.counts).reduce((a, b) => a + b, 0));
+function ActivityChart({ history }: { history: { total: number }[] }) {
+  const totals = history.map((h) => h.total);
   const max = Math.max(6, ...totals);
   return (
     <div className="chart">
@@ -194,11 +205,7 @@ function ActivityChart({ history }: { history: { counts: Record<string, number> 
             <div
               key={i}
               className="bar"
-              style={{
-                height: `${Math.max(4, ratio * 100)}%`,
-                background: hot ? '#ef5b47' : '#4c9aff',
-                opacity: 0.5 + 0.45 * ratio,
-              }}
+              style={{ height: `${Math.max(4, ratio * 100)}%`, background: hot ? '#ef5b47' : '#4c9aff', opacity: 0.5 + 0.45 * ratio }}
             />
           );
         })}

@@ -239,10 +239,12 @@ def sorted_desc(items: list[dict[str, Any]], field: str) -> list[dict[str, Any]]
 
 def get_config_zones() -> dict[str, Any]:
     item = CONFIG_ZONES_TABLE.get_item(Key={'configId': 'default'}).get('Item', {})
+    # `or` (not dict default) so a stored NULL frameWidth still falls back to
+    # 1280x720 - the processor relies on these for coordinate scaling.
     return response(200, {
         'configId': 'default',
-        'frameWidth': item.get('frameWidth', 1280),
-        'frameHeight': item.get('frameHeight', 720),
+        'frameWidth': item.get('frameWidth') or 1280,
+        'frameHeight': item.get('frameHeight') or 720,
         'zones': item.get('zones', []),
         'updatedAt': item.get('updatedAt'),
         'updatedBy': item.get('updatedBy'),
@@ -380,7 +382,9 @@ def post_incident(event: dict[str, Any]) -> dict[str, Any]:
         'metrics': payload.get('metrics', {}),
         'source': payload.get('source', 'processor'),
     }
-    incident_item.update({k: v for k, v in payload.items() if k not in incident_item})
+    # merge extra payload fields (type, personCount, ...) but keep the nested
+    # `task` request object out of the incident record - it becomes its own item
+    incident_item.update({k: v for k, v in payload.items() if k not in incident_item and k != 'task'})
     INCIDENTS_TABLE.put_item(Item=to_dynamo_value(incident_item))
 
     task_payload = payload.get('task', {}) if isinstance(payload.get('task', {}), dict) else {}
