@@ -34,6 +34,16 @@ export type ZoneMetric = {
   personCount: number;
   waitSec: number;
   status: ZoneStatus;
+  heatMean?: number;
+  heatMax?: number;
+  activeTrackIds?: number[];
+};
+
+export type Track = {
+  id: number;
+  bbox_xyxy: [number, number, number, number];
+  confidence: number;
+  class_id: number;
 };
 
 export type Incident = {

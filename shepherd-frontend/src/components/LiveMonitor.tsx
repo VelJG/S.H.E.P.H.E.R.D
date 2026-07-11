@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import type { Frame, Incident, Zone, ZoneMetric, ZoneStatus } from '../types';
 import CameraStage from './CameraStage';
 import { useLiveData } from '../lib/useLiveData';
@@ -29,16 +30,17 @@ const OTHER_CAMS = [
 type Props = { zones: Zone[]; frame: Frame; clock: string };
 
 export default function LiveMonitor({ zones, frame, clock }: Props) {
-  const live = useLiveData(zones);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const heatCanvasRef = useRef<HTMLCanvasElement>(null);
+  const live = useLiveData(zones, frame, videoRef, heatCanvasRef);
   const metricList: ZoneMetric[] = zones.map(
     (z) => live.metrics[z.id] ?? { zoneId: z.id, personCount: 0, waitSec: 0, status: 'normal' },
   );
-  const busiest = metricList.reduce(
-    (a, b) => (b.personCount > a.personCount ? b : a),
+  const hottest = metricList.reduce(
+    (a, b) => (numHeat(b) > numHeat(a) ? b : a),
     metricList[0] ?? { zoneId: '', personCount: 0, waitSec: 0, status: 'normal' as ZoneStatus },
   );
   const openIncidents = live.incidents.filter((i) => i.status !== 'resolved');
-  const longestWait = Math.max(0, ...metricList.map((m) => m.waitSec));
   const inZones = metricList.reduce((a, m) => a + m.personCount, 0);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -48,47 +50,49 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
         <div className="center">
           <div className="tiles">
             <Tile label="People in zones" value={String(inZones)} delta={`${zones.length} zones`} />
+            <Tile label="Active IDs" value={String(live.tracks.length)} delta={live.processing ? 'processing' : `${live.latencyMs}ms`} color="#f7b955" />
             <Tile
-              label="Busiest zone"
-              value={zones.find((z) => z.id === busiest.zoneId)?.name ?? 'None'}
-              delta={`${busiest.personCount}`}
-              color={STATUS_COLOR[busiest.status]}
+              label="Hottest zone"
+              value={zones.find((z) => z.id === hottest.zoneId)?.name ?? 'None'}
+              delta={`heat ${numHeat(hottest).toFixed(2)}`}
+              color={STATUS_COLOR[hottest.status]}
             />
             <Tile
               label="Open incidents"
               value={String(openIncidents.length)}
-              delta="pending"
+              delta="temporal"
               color={openIncidents.length ? '#ef5b47' : '#46c06a'}
             />
-            <Tile label="Longest wait" value={fmtWait(longestWait)} color="#d6a743" />
           </div>
 
           <div className="feed">
             {frame.kind === 'video' && frame.url && (
-              <video className="feedvideo" src={frame.url} autoPlay loop muted playsInline />
+              <video ref={videoRef} className="feedvideo" src={frame.url} autoPlay loop muted playsInline />
             )}
-            <CameraStage zones={zones} frame={frame} metrics={live.metrics} mode="live" />
+            {frame.kind === 'image' && frame.url && <img className="feedvideo" src={frame.url} alt="Uploaded camera frame" />}
+            <canvas ref={heatCanvasRef} className="heatmap-layer" aria-hidden="true" />
+            <CameraStage zones={zones} frame={frame} metrics={live.metrics} tracks={live.tracks} mode="live" />
             <div className="ov ov-live">
               <span className="ov-live__dot rec" style={{ background: live.connected ? '#ef5b47' : '#565c65' }} />
               <span className="ov-live__txt">{live.connected ? 'LIVE' : 'OFFLINE'}</span>
             </div>
-            <div className="ov ov-res">{frame.width} x {frame.height} - 15fps</div>
+            <div className="ov ov-res">{frame.width} × {frame.height} · {live.latencyMs || 0}ms</div>
             <div className="ov ov-cam">CAM-03 - Main</div>
             <div className="ov ov-time">{today} {clock}</div>
           </div>
 
           <div className="livebar">
             <span className="livebar__pill" style={{ background: live.connected ? '#ef5b47' : '#565c65' }}>
-              <span className="livebar__dot blink" />{live.connected ? 'LIVE' : 'NO API'}
+              <span className="livebar__dot blink" />{live.connected ? 'VISION LIVE' : 'NO PIPELINE'}
             </span>
-            <button className="btn pausebtn" onClick={() => live.setRunning(!live.running)}>
-              {live.running ? 'Pause' : 'Resume'}
-            </button>
-            {!live.connected && (
-              <span className="muted small" style={{ marginLeft: 10 }}>
-                Waiting for backend â€” set VITE_API_URL and run the processor.
-              </span>
-            )}
+            <button className="btn pausebtn" onClick={() => live.setRunning(!live.running)}>{live.running ? 'Pause' : 'Resume'}</button>
+            <button className="btn" onClick={() => void live.reset()}>Reset IDs + heat</button>
+            <label className="interval-control">
+              Interval ms
+              <input type="number" min={1} value={live.intervalMs} onChange={(event) => live.setIntervalMs(Number(event.target.value))} />
+            </label>
+            {live.processing && <span className="pipeline-note">YOLO ? ByteTrack ? Heatmap</span>}
+            {live.error && <span className="pipeline-error" title={live.error}>{live.error}</span>}
           </div>
 
           <div className="camstrip">
@@ -113,7 +117,7 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
                   <span className="zonebar" style={{ background: STATUS_COLOR[st] }} />
                   <div className="zonerow__body">
                     <div className="zonerow__name">{z.name}</div>
-                    <div className="zonerow__wait">wait ~{fmtWait(m?.waitSec ?? 0)}</div>
+                    <div className="zonerow__wait">wait ~{fmtWait(m?.waitSec ?? 0)} · heat {(m?.heatMean ?? 0).toFixed(2)}</div>
                   </div>
                   <span className="zonerow__count" style={{ color: STATUS_COLOR[st] }}>{m?.personCount ?? 0}</span>
                 </div>
@@ -137,6 +141,10 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
       </div>
     </div>
   );
+}
+
+function numHeat(metric: ZoneMetric): number {
+  return metric.heatMean ?? 0;
 }
 
 function Tile({ label, value, delta, color }: { label: string; value: string; delta?: string; color?: string }) {
