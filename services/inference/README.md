@@ -25,7 +25,7 @@ This service does not include ByteTrack, zone analysis, queue logic, incident lo
 | `CONF_THRES` | `0.25` | Confidence threshold. |
 | `DEVICE` | `auto` | Uses CUDA if available, otherwise CPU. |
 
-CUDA automatically enables half precision.
+CUDA automatically enables FP16 inference through Ultralytics `quantize=16`.
 
 ## Windows Model Location on D Drive
 
