@@ -9,6 +9,10 @@ import * as apigw from 'aws-cdk-lib/aws-apigatewayv2';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kinesisvideo from 'aws-cdk-lib/aws-kinesisvideo';
+import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as logs from 'aws-cdk-lib/aws-logs';
 
 export class ShepherdInfraStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -101,7 +105,33 @@ export class ShepherdInfraStack extends cdk.Stack {
       maxImageCount: 3,
     });
 
-    // 5. Amazon SageMaker AI placeholder resources
+    // 5. Amazon Kinesis Video Streams ingress scaffold
+    const liveCameraStream = new kinesisvideo.CfnStream(this, 'LiveCameraStream', {
+      name: `${prefix}shepherd-live-camera`,
+      dataRetentionInHours: 24,
+      mediaType: 'video/h264',
+      deviceName: 'android-phone-camera',
+      tags: [
+        { key: 'Project', value: 'SHEPHERD' },
+        { key: 'Environment', value: 'hackathon' },
+        { key: 'Component', value: 'video-ingest' },
+      ],
+    });
+
+    const kinesisVideoProducerUser = new iam.User(this, 'KinesisVideoProducerUser', {
+      userName: `${prefix}shepherd-kvs-producer`,
+    });
+
+    kinesisVideoProducerUser.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'kinesisvideo:DescribeStream',
+        'kinesisvideo:GetDataEndpoint',
+        'kinesisvideo:PutMedia',
+      ],
+      resources: [liveCameraStream.attrArn],
+    }));
+
+    // 6. Amazon SageMaker AI placeholder resources
     const sagemakerRole = new iam.Role(this, 'SageMakerRole', {
       roleName: `${prefix}shepherd-sagemaker-role`,
       assumedBy: new iam.ServicePrincipal('sagemaker.amazonaws.com'),
@@ -148,18 +178,18 @@ export class ShepherdInfraStack extends cdk.Stack {
       ],
     });
 
-    // 6. Amazon API Gateway HTTP API
+    // 7. Amazon API Gateway HTTP API
     const httpApi = new apigw.CfnApi(this, 'HttpApi', {
       name: `${prefix}shepherd-api`,
       protocolType: 'HTTP',
       corsConfiguration: {
         allowHeaders: ['content-type', 'authorization'],
-        allowMethods: ['GET', 'POST', 'OPTIONS'],
+        allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'OPTIONS'],
         allowOrigins: ['*'],
       },
     });
 
-    // 8. Amazon DynamoDB empty on-demand tables
+    // 8. Amazon DynamoDB on-demand tables
     const venueMetricsTable = new dynamodb.Table(this, 'VenueMetricsTable', {
       tableName: `${prefix}VenueMetrics`,
       partitionKey: { name: 'zoneId', type: dynamodb.AttributeType.STRING },
@@ -174,6 +204,12 @@ export class ShepherdInfraStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    incidentsTable.addGlobalSecondaryIndex({
+      indexName: 'status-createdAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
     const operationalTasksTable = new dynamodb.Table(this, 'OperationalTasksTable', {
       tableName: `${prefix}OperationalTasks`,
@@ -181,8 +217,108 @@ export class ShepherdInfraStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
+    operationalTasksTable.addGlobalSecondaryIndex({
+      indexName: 'status-updatedAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'updatedAt', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
-    // 7. AWS Lambda function execution role
+    const configZonesTable = new dynamodb.Table(this, 'ConfigZonesTable', {
+      tableName: `${prefix}ConfigZones`,
+      partitionKey: { name: 'configId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // 9. Amazon ECS Fargate scaffold for moving tracking/orchestration off the laptop
+    const processingVpc = new ec2.Vpc(this, 'ProcessingVpc', {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
+          name: 'public',
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+      ],
+    });
+
+    const processingCluster = new ecs.Cluster(this, 'ProcessingCluster', {
+      vpc: processingVpc,
+      clusterName: `${prefix}shepherd-processing-cluster`,
+      enableFargateCapacityProviders: true,
+    });
+
+    const processingLogGroup = new logs.LogGroup(this, 'ProcessingLogGroup', {
+      logGroupName: `/ecs/${prefix}shepherd-processor`,
+      retention: logs.RetentionDays.ONE_WEEK,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const processingTaskDefinition = new ecs.FargateTaskDefinition(this, 'ProcessingTaskDefinition', {
+      family: `${prefix}shepherd-processor`,
+      cpu: 512,
+      memoryLimitMiB: 1024,
+    });
+
+    processingTaskDefinition.addContainer('ProcessorContainer', {
+      containerName: 'processor',
+      image: ecs.ContainerImage.fromEcrRepository(ecrRepo, 'latest'),
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: 'processor',
+        logGroup: processingLogGroup,
+        mode: ecs.AwsLogDriverMode.NON_BLOCKING,
+      }),
+      environment: {
+        ENVIRONMENT: 'hackathon',
+        VENUE_METRICS_TABLE: venueMetricsTable.tableName,
+        INCIDENTS_TABLE: incidentsTable.tableName,
+        OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
+        CONFIG_ZONES_TABLE: configZonesTable.tableName,
+        EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
+        KINESIS_VIDEO_STREAM_NAME: liveCameraStream.name!,
+        KINESIS_VIDEO_STREAM_ARN: liveCameraStream.attrArn,
+      },
+      essential: true,
+    });
+
+    const processingServiceSecurityGroup = new ec2.SecurityGroup(this, 'ProcessingServiceSecurityGroup', {
+      vpc: processingVpc,
+      description: 'Security group for SHEPHERD processor Fargate service',
+      allowAllOutbound: true,
+    });
+
+    const processingService = new ecs.FargateService(this, 'ProcessingService', {
+      cluster: processingCluster,
+      serviceName: `${prefix}shepherd-processor`,
+      taskDefinition: processingTaskDefinition,
+      desiredCount: 0,
+      minHealthyPercent: 0,
+      circuitBreaker: { rollback: true },
+      assignPublicIp: true,
+      securityGroups: [processingServiceSecurityGroup],
+      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+    });
+
+    venueMetricsTable.grantReadWriteData(processingTaskDefinition.taskRole);
+    incidentsTable.grantReadWriteData(processingTaskDefinition.taskRole);
+    operationalTasksTable.grantReadWriteData(processingTaskDefinition.taskRole);
+    configZonesTable.grantReadWriteData(processingTaskDefinition.taskRole);
+    evidenceBucket.grantReadWrite(processingTaskDefinition.taskRole);
+
+    processingTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: [
+        'kinesisvideo:DescribeStream',
+        'kinesisvideo:GetDataEndpoint',
+        'kinesisvideo:GetMedia',
+        'kinesisvideo:GetClip',
+        'kinesisvideo:GetHLSStreamingSessionURL',
+      ],
+      resources: [liveCameraStream.attrArn],
+    }));
+
+    // 10. AWS Lambda function execution role
     const lambdaRole = new iam.Role(this, 'LambdaRole', {
       roleName: `${prefix}shepherd-lambda-role`,
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
@@ -194,6 +330,7 @@ export class ShepherdInfraStack extends cdk.Stack {
     venueMetricsTable.grantReadWriteData(lambdaRole);
     incidentsTable.grantReadWriteData(lambdaRole);
     operationalTasksTable.grantReadWriteData(lambdaRole);
+    configZonesTable.grantReadWriteData(lambdaRole);
     evidenceBucket.grantReadWrite(lambdaRole);
 
     const healthLambda = new lambda.Function(this, 'HealthLambda', {
@@ -211,26 +348,64 @@ export class ShepherdInfraStack extends cdk.Stack {
       },
     });
 
+    const apiLambda = new lambda.Function(this, 'AppApiLambda', {
+      functionName: `${prefix}shepherd-app-api`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'api.handler',
+      code: lambda.Code.fromAsset('lambda'),
+      role: lambdaRole,
+      timeout: cdk.Duration.seconds(30),
+      environment: {
+        ENVIRONMENT: 'hackathon',
+        VENUE_METRICS_TABLE: venueMetricsTable.tableName,
+        INCIDENTS_TABLE: incidentsTable.tableName,
+        OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
+        CONFIG_ZONES_TABLE: configZonesTable.tableName,
+        EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
+      },
+    });
+
     // API Gateway Lambda Integration permissions & resources
-    new lambda.CfnPermission(this, 'ApiGatewayInvokePermission', {
-      action: 'lambda:InvokeFunction',
-      functionName: healthLambda.functionArn,
-      principal: 'apigateway.amazonaws.com',
-      sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${httpApi.ref}/*/*/*`,
-    });
+    const createIntegration = (idPrefix: string, fn: lambda.Function) => {
+      new lambda.CfnPermission(this, `${idPrefix}InvokePermission`, {
+        action: 'lambda:InvokeFunction',
+        functionName: fn.functionArn,
+        principal: 'apigateway.amazonaws.com',
+        sourceArn: `arn:aws:execute-api:${this.region}:${this.account}:${httpApi.ref}/*/*/*`,
+      });
 
-    const integration = new apigw.CfnIntegration(this, 'LambdaIntegration', {
-      apiId: httpApi.ref,
-      integrationType: 'AWS_PROXY',
-      integrationUri: healthLambda.functionArn,
-      payloadFormatVersion: '2.0',
-    });
+      return new apigw.CfnIntegration(this, `${idPrefix}Integration`, {
+        apiId: httpApi.ref,
+        integrationType: 'AWS_PROXY',
+        integrationUri: fn.functionArn,
+        payloadFormatVersion: '2.0',
+      });
+    };
 
-    new apigw.CfnRoute(this, 'HealthRoute', {
-      apiId: httpApi.ref,
-      routeKey: 'GET /health',
-      target: `integrations/${integration.ref}`,
-    });
+    const createRoute = (idPrefix: string, routeKey: string, integration: apigw.CfnIntegration) => {
+      new apigw.CfnRoute(this, `${idPrefix}Route`, {
+        apiId: httpApi.ref,
+        routeKey,
+        target: `integrations/${integration.ref}`,
+      });
+    };
+
+    const healthIntegration = createIntegration('Health', healthLambda);
+    const appApiIntegration = createIntegration('AppApi', apiLambda);
+
+    createRoute('Health', 'GET /health', healthIntegration);
+    createRoute('GetConfigZones', 'GET /config/zones', appApiIntegration);
+    createRoute('PutConfigZones', 'PUT /config/zones', appApiIntegration);
+    createRoute('PostMetrics', 'POST /metrics', appApiIntegration);
+    createRoute('GetMetricsLatest', 'GET /metrics/latest', appApiIntegration);
+    createRoute('GetUploadsPresign', 'GET /uploads/presign', appApiIntegration);
+    createRoute('PostIncidents', 'POST /incidents', appApiIntegration);
+    createRoute('GetIncidents', 'GET /incidents', appApiIntegration);
+    createRoute('GetIncidentById', 'GET /incidents/{id}', appApiIntegration);
+    createRoute('PatchIncidentById', 'PATCH /incidents/{id}', appApiIntegration);
+    createRoute('GetTasks', 'GET /tasks', appApiIntegration);
+    createRoute('GetTaskById', 'GET /tasks/{id}', appApiIntegration);
+    createRoute('PatchTaskById', 'PATCH /tasks/{id}', appApiIntegration);
 
     new apigw.CfnStage(this, 'ApiStage', {
       apiId: httpApi.ref,
@@ -268,6 +443,41 @@ export class ShepherdInfraStack extends cdk.Stack {
       description: 'ECR Repository URI',
     });
 
+    new cdk.CfnOutput(this, 'KinesisVideoStreamName', {
+      value: liveCameraStream.name!,
+      description: 'Kinesis Video Stream name for live camera ingest',
+    });
+
+    new cdk.CfnOutput(this, 'KinesisVideoStreamArn', {
+      value: liveCameraStream.attrArn,
+      description: 'Kinesis Video Stream ARN for live camera ingest',
+    });
+
+    new cdk.CfnOutput(this, 'KinesisVideoProducerUserName', {
+      value: kinesisVideoProducerUser.userName,
+      description: 'IAM user name for Android Kinesis Video producer credentials',
+    });
+
+    new cdk.CfnOutput(this, 'KinesisVideoRegion', {
+      value: this.region,
+      description: 'AWS region for Android Kinesis Video producer configuration',
+    });
+
+    new cdk.CfnOutput(this, 'ProcessingClusterName', {
+      value: processingCluster.clusterName,
+      description: 'ECS cluster name for the SHEPHERD processing worker',
+    });
+
+    new cdk.CfnOutput(this, 'ProcessingServiceName', {
+      value: processingService.serviceName,
+      description: 'ECS Fargate service name for the SHEPHERD processing worker',
+    });
+
+    new cdk.CfnOutput(this, 'ProcessingTaskFamily', {
+      value: processingTaskDefinition.family,
+      description: 'ECS task definition family for the SHEPHERD processing worker',
+    });
+
     new cdk.CfnOutput(this, 'VenueMetricsTableName', {
       value: venueMetricsTable.tableName,
     });
@@ -278,6 +488,10 @@ export class ShepherdInfraStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'OperationalTasksTableName', {
       value: operationalTasksTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'ConfigZonesTableName', {
+      value: configZonesTable.tableName,
     });
 
     new cdk.CfnOutput(this, 'SageMakerRoleArn', {
