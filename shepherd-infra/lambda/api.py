@@ -110,6 +110,109 @@ def query_params(event: dict[str, Any]) -> dict[str, str]:
     return event.get('queryStringParameters') or {}
 
 
+def positive_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f'`{field_name}` must be a positive integer')
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'`{field_name}` must be a positive integer') from None
+    if parsed <= 0:
+        raise ValueError(f'`{field_name}` must be a positive integer')
+    return parsed
+
+
+def number_value(value: Any, field_name: str) -> int | float:
+    if isinstance(value, bool):
+        raise ValueError(f'`{field_name}` must be a number')
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'`{field_name}` must be a number') from None
+    if parsed.is_integer():
+        return int(parsed)
+    return parsed
+
+
+def normalize_point(point: Any, zone_index: int, point_index: int) -> list[int | float]:
+    field_name = f'zones[{zone_index}].points[{point_index}]'
+
+    if isinstance(point, list) and len(point) == 2:
+        return [
+            number_value(point[0], f'{field_name}[0]'),
+            number_value(point[1], f'{field_name}[1]'),
+        ]
+
+    if isinstance(point, dict) and 'x' in point and 'y' in point:
+        return [
+            number_value(point['x'], f'{field_name}.x'),
+            number_value(point['y'], f'{field_name}.y'),
+        ]
+
+    raise ValueError(f'`{field_name}` must be [x, y] or {{ "x": number, "y": number }}')
+
+
+def normalize_zone(zone: Any, index: int) -> dict[str, Any]:
+    if not isinstance(zone, dict):
+        raise ValueError(f'`zones[{index}]` must be an object')
+
+    points = zone.get('points')
+    if not isinstance(points, list):
+        raise ValueError(f'`zones[{index}].points` must be an array')
+    if len(points) < 3:
+        raise ValueError(f'`zones[{index}].points` must contain at least 3 points')
+
+    zone_id = zone.get('id') or zone.get('zoneId')
+    if not zone_id:
+        raise ValueError(f'`zones[{index}].id` is required')
+
+    normalized = {
+        'id': str(zone_id),
+        'name': str(zone.get('name', zone_id)),
+        'warnAt': positive_int(zone.get('warnAt', 4), f'zones[{index}].warnAt'),
+        'congestAt': positive_int(zone.get('congestAt', 7), f'zones[{index}].congestAt'),
+        'avgServiceSec': positive_int(zone.get('avgServiceSec', 20), f'zones[{index}].avgServiceSec'),
+        'points': [normalize_point(point, index, point_index) for point_index, point in enumerate(points)],
+    }
+
+    for optional_field in ('color', 'description'):
+        if optional_field in zone:
+            normalized[optional_field] = zone[optional_field]
+
+    return normalized
+
+
+def normalize_zone_config(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, list):
+        raw_zones = payload
+        frame_width = None
+        frame_height = None
+        updated_by = 'dashboard'
+        updated_at = now_iso()
+    elif isinstance(payload, dict):
+        raw_zones = payload.get('zones')
+        frame_width = payload.get('frameWidth')
+        frame_height = payload.get('frameHeight')
+        updated_by = payload.get('updatedBy', 'dashboard')
+        updated_at = payload.get('updatedAt', now_iso())
+    else:
+        raise ValueError('Config payload must be a JSON object or array')
+
+    if not isinstance(raw_zones, list):
+        raise ValueError('`zones` must be an array')
+
+    return {
+        'configId': 'default',
+        'frameWidth': positive_int(frame_width, 'frameWidth') if frame_width is not None else None,
+        'frameHeight': positive_int(frame_height, 'frameHeight') if frame_height is not None else None,
+        'zones': [normalize_zone(zone, index) for index, zone in enumerate(raw_zones)],
+        'updatedAt': str(updated_at),
+        'updatedBy': str(updated_by),
+    }
+
+
 def scan_all(table: Any, **kwargs: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     result = table.scan(**kwargs)
@@ -138,8 +241,8 @@ def get_config_zones() -> dict[str, Any]:
     item = CONFIG_ZONES_TABLE.get_item(Key={'configId': 'default'}).get('Item', {})
     return response(200, {
         'configId': 'default',
-        'frameWidth': item.get('frameWidth'),
-        'frameHeight': item.get('frameHeight'),
+        'frameWidth': item.get('frameWidth', 1280),
+        'frameHeight': item.get('frameHeight', 720),
         'zones': item.get('zones', []),
         'updatedAt': item.get('updatedAt'),
         'updatedBy': item.get('updatedBy'),
@@ -148,28 +251,12 @@ def get_config_zones() -> dict[str, Any]:
 
 def put_config_zones(event: dict[str, Any]) -> dict[str, Any]:
     payload = decode_body(event)
-    if isinstance(payload, list):
-        zones = payload
-        metadata: dict[str, Any] = {}
-    elif isinstance(payload, dict):
-        zones = payload.get('zones')
-        metadata = payload
-    else:
-        raise ValueError('Config payload must be a JSON object or array')
-
-    if not isinstance(zones, list):
-        raise ValueError('`zones` must be an array')
-
-    item = {
-        'configId': 'default',
-        'frameWidth': metadata.get('frameWidth'),
-        'frameHeight': metadata.get('frameHeight'),
-        'zones': to_dynamo_value(zones),
-        'updatedAt': metadata.get('updatedAt', now_iso()),
-        'updatedBy': metadata.get('updatedBy', 'dashboard'),
-    }
-    CONFIG_ZONES_TABLE.put_item(Item=item)
-    return response(200, {'message': 'Zones updated', 'item': item})
+    item = normalize_zone_config(payload)
+    CONFIG_ZONES_TABLE.put_item(Item=to_dynamo_value(item))
+    return response(200, {
+        'message': 'Zones updated',
+        'item': item,
+    })
 
 
 def post_metrics(event: dict[str, Any]) -> dict[str, Any]:
