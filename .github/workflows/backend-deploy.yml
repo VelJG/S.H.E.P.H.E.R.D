@@ -58,6 +58,8 @@ jobs:
 
       - name: Deploy backend stack
         working-directory: ${{ env.INFRA_DIR }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: npx cdk deploy "$STACK_NAME" --require-approval never
 
       - name: Print backend outputs

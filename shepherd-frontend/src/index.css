@@ -105,6 +105,44 @@ body { background: var(--bg); color: var(--text); font-family: var(--font-body);
 .pipeline-note { font: 500 10px var(--font-mono); color: var(--amber); }
 .pipeline-error { max-width: 290px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10px var(--font-mono); color: var(--red); }
 
+.live-source-panel {
+  border: 1px solid var(--border-2);
+  border-radius: 11px;
+  background: rgba(12, 14, 18, .92);
+  padding: 12px;
+}
+.live-source-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+.live-source-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.live-source-grid label {
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+}
+.source-state {
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  color: var(--muted-2);
+  font: 500 10px var(--font-mono);
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.source-state--on {
+  border-color: rgba(70, 192, 106, .45);
+  color: var(--green);
+}
+
 /* ---------- Demo video controls ---------- */
 .demo-controls {
   display: flex;

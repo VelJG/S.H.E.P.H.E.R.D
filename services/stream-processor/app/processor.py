@@ -138,6 +138,7 @@ class ByteTrackZoneProcessor:
                 {
                     "zoneId": zone.id,
                     "personCount": count,
+                    "queueLength": count,
                     "waitSec": count * zone.avg_service_sec,
                     "status": status,
                 }
@@ -153,16 +154,22 @@ def _foot_point(bbox: list[float]) -> Point:
 
 def _format_track(row: Any) -> dict[str, Any]:
     if hasattr(row, "tlbr"):
+        track_id = int(getattr(row, "track_id"))
         return {
-            "id": int(getattr(row, "track_id")),
+            "id": track_id,
+            "track_id": track_id,
             "bbox_xyxy": [round(float(value), 2) for value in row.tlbr],
             "confidence": round(float(getattr(row, "score", 0)), 4),
             "class_id": int(getattr(row, "cls", PERSON_CLASS_ID)),
+            "class_name": "person",
         }
 
+    track_id = int(row[4])
     return {
-        "id": int(row[4]),
+        "id": track_id,
+        "track_id": track_id,
         "bbox_xyxy": [round(float(value), 2) for value in row[:4]],
         "confidence": round(float(row[5]), 4),
         "class_id": int(row[6]) if len(row) > 6 else PERSON_CLASS_ID,
+        "class_name": "person",
     }

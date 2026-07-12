@@ -1,5 +1,6 @@
-import { useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { Frame, Incident, Zone, ZoneMetric, ZoneStatus } from '../types';
+import { DEFAULT_FRAME_H, DEFAULT_FRAME_W } from '../types';
 import CameraStage from './CameraStage';
 import { useLiveData } from '../lib/useLiveData';
 
@@ -27,13 +28,62 @@ const OTHER_CAMS = [
   { id: 'CAM-05', name: 'Lobby' },
 ];
 
+const RELAY_STREAM_KEY = 'shepherd.live.relay.streamUrl';
+const RELAY_SNAPSHOT_KEY = 'shepherd.live.relay.snapshotUrl';
+
 type Props = { zones: Zone[]; frame: Frame; clock: string };
+
+function storedValue(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
 
 export default function LiveMonitor({ zones, frame, clock }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement>(null);
-  const live = useLiveData(zones, frame, videoRef, heatCanvasRef);
-  const metricList: ZoneMetric[] = zones.map(
+  const [relayStreamUrl, setRelayStreamUrlState] = useState(() => storedValue(RELAY_STREAM_KEY));
+  const [relaySnapshotUrl, setRelaySnapshotUrlState] = useState(() => storedValue(RELAY_SNAPSHOT_KEY));
+
+  const trimmedStreamUrl = relayStreamUrl.trim();
+  const trimmedSnapshotUrl = relaySnapshotUrl.trim();
+  const hasRelay = Boolean(trimmedStreamUrl && trimmedSnapshotUrl);
+  const liveFrame: Frame = hasRelay
+    ? { width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: trimmedStreamUrl, kind: 'image' }
+    : frame;
+
+  const fullFrameZone = useMemo<Zone>(() => ({
+    id: 'live-full-frame',
+    name: 'Live Camera Full Frame',
+    color: '#4c9aff',
+    points: [
+      { x: 0, y: 0 },
+      { x: liveFrame.width, y: 0 },
+      { x: liveFrame.width, y: liveFrame.height },
+      { x: 0, y: liveFrame.height },
+    ],
+    warnAt: 4,
+    congestAt: 7,
+    avgServiceSec: 20,
+  }), [liveFrame.height, liveFrame.width]);
+
+  const activeZones = zones.length ? zones : hasRelay ? [fullFrameZone] : zones;
+  const live = useLiveData(activeZones, liveFrame, videoRef, heatCanvasRef, {
+    snapshotUrl: hasRelay ? trimmedSnapshotUrl : '',
+  });
+
+  const setRelayStreamUrl = (value: string) => {
+    setRelayStreamUrlState(value);
+    localStorage.setItem(RELAY_STREAM_KEY, value);
+  };
+  const setRelaySnapshotUrl = (value: string) => {
+    setRelaySnapshotUrlState(value);
+    localStorage.setItem(RELAY_SNAPSHOT_KEY, value);
+  };
+
+  const metricList: ZoneMetric[] = activeZones.map(
     (z) => live.metrics[z.id] ?? { zoneId: z.id, personCount: 0, waitSec: 0, status: 'normal' },
   );
   const hottest = metricList.reduce(
@@ -49,11 +99,11 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
       <div className="spotlight__body">
         <div className="center">
           <div className="tiles">
-            <Tile label="People in zones" value={String(inZones)} delta={`${zones.length} zones`} />
+            <Tile label="People in zones" value={String(inZones)} delta={`${activeZones.length} zones`} />
             <Tile label="Active IDs" value={String(live.tracks.length)} delta={live.processing ? 'processing' : `${live.latencyMs}ms`} color="#f7b955" />
             <Tile
               label="Hottest zone"
-              value={zones.find((z) => z.id === hottest.zoneId)?.name ?? 'None'}
+              value={activeZones.find((z) => z.id === hottest.zoneId)?.name ?? 'None'}
               delta={`heat ${numHeat(hottest).toFixed(2)}`}
               color={STATUS_COLOR[hottest.status]}
             />
@@ -65,19 +115,54 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
             />
           </div>
 
+          <div className="live-source-panel">
+            <div className="live-source-panel__head">
+              <span className="rail__label">LIVE IP CAMERA RELAY</span>
+              <span className={`source-state ${hasRelay ? 'source-state--on' : ''}`}>
+                {hasRelay ? 'relay ready' : 'waiting for relay URLs'}
+              </span>
+            </div>
+            <div className="live-source-grid">
+              <label>
+                Stream URL
+                <input
+                  className="input"
+                  placeholder="https://xxxx.trycloudflare.com/stream.mjpg"
+                  value={relayStreamUrl}
+                  onChange={(event) => setRelayStreamUrl(event.target.value)}
+                />
+              </label>
+              <label>
+                Snapshot URL
+                <input
+                  className="input"
+                  placeholder="https://xxxx.trycloudflare.com/snapshot.jpg"
+                  value={relaySnapshotUrl}
+                  onChange={(event) => setRelaySnapshotUrl(event.target.value)}
+                />
+              </label>
+            </div>
+            <p className="savehint">
+              Run the laptop relay + Cloudflare tunnel, paste both URLs here, then press Resume/Start.
+              If no zones are saved, the AI uses a full-frame live zone for the demo.
+            </p>
+          </div>
+
           <div className="feed">
-            {frame.kind === 'video' && frame.url && (
-              <video ref={videoRef} className="feedvideo" src={frame.url} autoPlay loop muted playsInline />
+            {liveFrame.kind === 'video' && liveFrame.url && (
+              <video ref={videoRef} className="feedvideo" src={liveFrame.url} autoPlay loop muted playsInline />
             )}
-            {frame.kind === 'image' && frame.url && <img className="feedvideo" src={frame.url} alt="Uploaded camera frame" />}
+            {liveFrame.kind === 'image' && liveFrame.url && (
+              <img className="feedvideo" src={liveFrame.url} alt={hasRelay ? 'Live IP camera stream' : 'Uploaded camera frame'} />
+            )}
             <canvas ref={heatCanvasRef} className="heatmap-layer" aria-hidden="true" />
-            <CameraStage zones={zones} frame={frame} metrics={live.metrics} tracks={live.tracks} mode="live" />
+            <CameraStage zones={activeZones} frame={liveFrame} metrics={live.metrics} tracks={live.tracks} mode="live" />
             <div className="ov ov-live">
               <span className="ov-live__dot rec" style={{ background: live.connected ? '#ef5b47' : '#565c65' }} />
               <span className="ov-live__txt">{live.connected ? 'LIVE' : 'OFFLINE'}</span>
             </div>
-            <div className="ov ov-res">{frame.width} × {frame.height} · {live.latencyMs || 0}ms</div>
-            <div className="ov ov-cam">CAM-03 - Main</div>
+            <div className="ov ov-res">{liveFrame.width} x {liveFrame.height} - {live.latencyMs || 0}ms</div>
+            <div className="ov ov-cam">{hasRelay ? 'IP CAM RELAY' : 'CAM-03 - Main'}</div>
             <div className="ov ov-time">{today} {clock}</div>
           </div>
 
@@ -85,13 +170,13 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
             <span className="livebar__pill" style={{ background: live.connected ? '#ef5b47' : '#565c65' }}>
               <span className="livebar__dot blink" />{live.connected ? 'VISION LIVE' : 'NO PIPELINE'}
             </span>
-            <button className="btn pausebtn" onClick={() => live.setRunning(!live.running)}>{live.running ? 'Pause' : 'Resume'}</button>
+            <button className="btn pausebtn" disabled={!liveFrame.url} onClick={() => live.setRunning(!live.running)}>{live.running ? 'Pause' : 'Resume / Start'}</button>
             <button className="btn" onClick={() => void live.reset()}>Reset IDs + heat</button>
             <label className="interval-control">
               Interval ms
               <input type="number" min={1} value={live.intervalMs} onChange={(event) => live.setIntervalMs(Number(event.target.value))} />
             </label>
-            {live.processing && <span className="pipeline-note">YOLO ? ByteTrack ? Heatmap</span>}
+            {live.processing && <span className="pipeline-note">YOLO to tracking to heatmap</span>}
             {live.error && <span className="pipeline-error" title={live.error}>{live.error}</span>}
           </div>
 
@@ -108,8 +193,9 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
         <aside className="rail">
           <span className="rail__label">ZONES</span>
           <div className="zoneslist">
-            {zones.length === 0 && <p className="muted small">No zones defined. Draw them in the Zone Editor.</p>}
-            {zones.map((z) => {
+            {zones.length === 0 && hasRelay && <p className="muted small">No zones saved. Using full-frame live camera zone for demo tracking.</p>}
+            {zones.length === 0 && !hasRelay && <p className="muted small">No zones defined. Draw them in the Zone Editor.</p>}
+            {activeZones.map((z) => {
               const m = live.metrics[z.id];
               const st = m?.status ?? 'normal';
               return (
@@ -117,7 +203,7 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
                   <span className="zonebar" style={{ background: STATUS_COLOR[st] }} />
                   <div className="zonerow__body">
                     <div className="zonerow__name">{z.name}</div>
-                    <div className="zonerow__wait">wait ~{fmtWait(m?.waitSec ?? 0)} · heat {(m?.heatMean ?? 0).toFixed(2)}</div>
+                    <div className="zonerow__wait">wait ~{fmtWait(m?.waitSec ?? 0)} - heat {(m?.heatMean ?? 0).toFixed(2)}</div>
                   </div>
                   <span className="zonerow__count" style={{ color: STATUS_COLOR[st] }}>{m?.personCount ?? 0}</span>
                 </div>

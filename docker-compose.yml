@@ -23,7 +23,22 @@ services:
       context: ./services/stream-processor
     image: shepherd-bytetrack:local
     container_name: shepherd-bytetrack
+    depends_on:
+      - inference
     ports:
       - "8090:8090"
     environment:
-      TRACK_FRAME_RATE: "30"
+      TRACK_FRAME_RATE: ${TRACK_FRAME_RATE:-30}
+      YOLO_INFERENCE_URL: ${YOLO_INFERENCE_URL:-http://inference:8080/invocations}
+      BACKEND_API_URL: ${BACKEND_API_URL:-}
+      ZONE_REFRESH_SEC: ${ZONE_REFRESH_SEC:-10}
+      METRICS_POST_INTERVAL_SEC: ${METRICS_POST_INTERVAL_SEC:-1}
+      INCIDENT_COOLDOWN_SEC: ${INCIDENT_COOLDOWN_SEC:-60}
+      EVIDENCE_UPLOAD_ENABLED: ${EVIDENCE_UPLOAD_ENABLED:-true}
+      DETECT_INTERVAL_MS: ${DETECT_INTERVAL_MS:-33}
+      DETECT_INTERVAL_FALLBACK_MS: ${DETECT_INTERVAL_FALLBACK_MS:-50}
+      DETECT_IN_FLIGHT_POLICY: ${DETECT_IN_FLIGHT_POLICY:-skip}
+      ZONES_FILE: ${ZONES_FILE:-}
+    volumes:
+      - ./samples:/samples:ro
+      - ${SHEPHERD_RUNS_DIR:-./runs}:/runs

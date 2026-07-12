@@ -49,11 +49,21 @@ Timing assumptions:
 - Docker Compose local override for host machine model/cache paths.
 - Tailscale usage clarified for client testing.
 - Detection timing documented: `33ms` target, `50ms` fallback, `skip` in-flight policy.
-- Stream processor detection loop scaffold:
+- Stream processor integration worker through Phase 3:
   - reads video/camera source
   - samples by interval
   - calls YOLO `/invocations`
-  - writes JSONL detection records for ByteTrack handoff
+  - feeds detections into ByteTrack
+  - runs bottom-center zone analysis
+  - writes JSONL tracks/zones output
+  - fetches zones from `GET /config/zones` when `BACKEND_API_URL` is set
+  - posts live zone metrics to `POST /metrics` when `BACKEND_API_URL` is set
+- Stream processor incident/evidence worker through Phase 5:
+  - creates incidents only on `normal/warning -> congested` transitions
+  - throttles repeated incidents per zone with `INCIDENT_COOLDOWN_SEC`
+  - uploads evidence frames through `GET /uploads/presign` and S3 presigned PUT
+  - passes `evidenceKey` to `POST /incidents`
+- ByteTrack output returns both canonical `track_id` and frontend-compatible `id`.
 - Backend API Lambda scaffold for demo routes:
   - `GET /config/zones`
   - `PUT /config/zones`
@@ -70,16 +80,18 @@ Timing assumptions:
 
 ## Immediate Next Tasks
 
-1. Validate detection loop with longer sample videos.
-2. Confirm teammate ByteTrack input contract using `detection-loop.jsonl`.
-3. Add ByteTrack inside `services/stream-processor`, not inside `services/inference`.
-4. Define stream-processor output shape:
+1. Validate integrated YOLO -> ByteTrack -> zone metrics loop with longer sample videos.
+2. Confirm teammate ByteTrack/zone contract using `tracks.jsonl`.
+3. Validate backend `GET /config/zones`, `POST /metrics`, `GET /uploads/presign`,
+   and `POST /incidents` against the deployed API.
+4. Keep stream-processor output shape aligned with:
 
 ```json
 {
   "timestamp_sec": 1.23,
   "tracks": [
     {
+      "id": 7,
       "track_id": 7,
       "class_id": 0,
       "class_name": "person",
@@ -91,13 +103,8 @@ Timing assumptions:
 ```
 
 5. Wire frontend Zone Editor save action to backend `PUT /config/zones`.
-6. Add zone analysis after ByteTrack:
-  - point-in-polygon by bbox center or foot point
-  - person count per zone
-  - queue length
-  - wait/dwell estimate
-7. Push zone metrics/incidents to backend API.
-8. Update stream processor to fetch zone config from `GET /config/zones`.
+6. Replace local video source with realtime camera source.
+7. Tune incident thresholds/cooldown using live demo footage.
 
 ## YOLO Inference Tasks
 
@@ -164,6 +171,7 @@ YOLO_INFERENCE_URL=http://localhost:8080/invocations
 ZONE_REFRESH_SEC=10
 METRICS_POST_INTERVAL_SEC=1
 INCIDENT_COOLDOWN_SEC=60
+EVIDENCE_UPLOAD_ENABLED=true
 ```
 
 Ownership rule:

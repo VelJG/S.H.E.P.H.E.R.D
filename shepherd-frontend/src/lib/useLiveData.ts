@@ -4,8 +4,8 @@ import { TemporalHeatmap } from './temporalHeatmap';
 
 const env = (import.meta as any).env ?? {};
 const API_URL = env.VITE_API_URL || '';
-const YOLO_URL = env.VITE_YOLO_URL || '/api/yolo/invocations';
-const TRACK_URL = env.VITE_TRACKER_URL || '/api/tracker/track';
+const YOLO_URL = env.VITE_YOLO_URL || (API_URL ? `${API_URL}/demo/infer-frame` : '/api/yolo/invocations');
+const TRACK_URL = env.VITE_TRACKER_URL || (API_URL ? `${API_URL}/demo/track` : '/api/tracker/track');
 const RESET_URL = TRACK_URL.replace(/\/track\/?$/, '/reset');
 const HISTORY_LEN = 28;
 
@@ -37,7 +37,7 @@ export function useLiveData(
   frame: Frame,
   videoRef: RefObject<HTMLVideoElement>,
   heatCanvasRef: RefObject<HTMLCanvasElement>,
-  options: { initialRunning?: boolean } = {},
+  options: { initialRunning?: boolean; snapshotUrl?: string } = {},
 ): LiveState {
   const [metrics, setMetrics] = useState<Record<string, ZoneMetric>>({});
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -49,6 +49,7 @@ export function useLiveData(
   const [latencyMs, setLatencyMs] = useState(0);
   const [running, setRunning] = useState(options.initialRunning ?? true);
   const [intervalMs, setIntervalMsState] = useState(() => Math.max(1, num(env.VITE_VISION_INTERVAL_MS) || 300));
+  const snapshotUrl = options.snapshotUrl ?? '';
   const zonesRef = useRef(zones);
   const busyRef = useRef(false);
   const captureRef = useRef<HTMLCanvasElement | null>(null);
@@ -57,6 +58,13 @@ export function useLiveData(
   if (!heatmapRef.current) heatmapRef.current = new TemporalHeatmap();
 
   const capture = useCallback(async () => {
+    if (snapshotUrl) {
+      const url = new URL(snapshotUrl, window.location.href);
+      url.searchParams.set('_shepherdTs', String(Date.now()));
+      const response = await fetch(url.toString(), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Could not read live camera snapshot: HTTP ${response.status}`);
+      return response.blob();
+    }
     if (!frame.url) throw new Error('Upload an image or video in Zone Editor first.');
     if (frame.kind === 'image') {
       const response = await fetch(frame.url);
@@ -73,7 +81,7 @@ export function useLiveData(
     return new Promise<Blob>((resolve, reject) =>
       canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('Could not capture the video frame.')), 'image/jpeg', 0.88),
     );
-  }, [frame, videoRef]);
+  }, [frame, snapshotUrl, videoRef]);
 
   const tick = useCallback(async () => {
     if (busyRef.current || !frame.url || !heatCanvasRef.current) return;
@@ -208,7 +216,7 @@ export function useLiveData(
     try { await fetch(RESET_URL, { method: 'POST' }); } catch { /* next tick reports connectivity */ }
   }, [heatCanvasRef]);
 
-  useEffect(() => { void reset(); }, [frame.url, reset]);
+  useEffect(() => { void reset(); }, [frame.url, reset, snapshotUrl]);
   useEffect(() => {
     if (!running || !frame.url) return;
     void tick();
