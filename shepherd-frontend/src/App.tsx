@@ -53,7 +53,7 @@ export default function App() {
             Zone Editor
           </button>
           <button className={`navtab ${tab === 'demo' ? 'navtab--on' : ''}`} onClick={() => setTab('demo')}>
-            Demo Video
+            Upload Video
           </button>
         </nav>
 
