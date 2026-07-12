@@ -4,9 +4,9 @@ import { DEFAULT_FRAME_W, DEFAULT_FRAME_H } from './types';
 import { loadZones, saveZones } from './lib/storage';
 import LiveMonitor from './components/LiveMonitor';
 import ZoneEditor from './components/ZoneEditor';
-import DemoVideo from './components/DemoVideo';
+import UploadVideo from './components/UploadVideo';
 
-type Tab = 'live' | 'zones' | 'demo';
+type Tab = 'live' | 'zones' | 'upload';
 
 function useClock(): string {
   const [now, setNow] = useState(() => new Date());
@@ -52,7 +52,7 @@ export default function App() {
           <button className={`navtab ${tab === 'zones' ? 'navtab--on' : ''}`} onClick={() => setTab('zones')}>
             Zone Editor
           </button>
-          <button className={`navtab ${tab === 'demo' ? 'navtab--on' : ''}`} onClick={() => setTab('demo')}>
+          <button className={`navtab ${tab === 'upload' ? 'navtab--on' : ''}`} onClick={() => setTab('upload')}>
             Upload Video
           </button>
         </nav>
@@ -71,9 +71,10 @@ export default function App() {
         ) : tab === 'zones' ? (
           <ZoneEditor zones={zones} setZones={setZones} frame={frame} setFrame={setFrame} />
         ) : (
-          <DemoVideo />
+          <UploadVideo />
         )}
       </main>
     </div>
   );
 }
+
