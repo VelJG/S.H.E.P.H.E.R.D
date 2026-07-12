@@ -10,6 +10,8 @@ export const DEFAULT_FRAME_H = 720;
  *  a still image, a looping uploaded video, or the built-in scene (url null). */
 export type Frame = { width: number; height: number; url: string | null; kind?: 'image' | 'video' };
 
+export type LiveSource = { streamUrl: string; snapshotUrl: string };
+
 export type Point = { x: number; y: number };
 
 export type ZoneStatus = 'normal' | 'warning' | 'congested';

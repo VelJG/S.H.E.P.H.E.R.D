@@ -11,15 +11,18 @@ type Props = {
   setZones: (z: Zone[]) => void;
   frame: Frame;
   setFrame: (f: Frame) => void;
+  liveSnapshotUrl?: string;
+  onUseLiveFrame?: () => Promise<void>;
 };
 
-export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) {
+export default function ZoneEditor({ zones, setZones, frame, setFrame, liveSnapshotUrl = '', onUseLiveFrame }: Props) {
   const [draft, setDraft] = useState<Point[]>([]);
   const [name, setName] = useState('');
   const [naming, setNaming] = useState(false); // name popup is open
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawMode, setDrawMode] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [loadingLiveFrame, setLoadingLiveFrame] = useState(false);
 
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -108,7 +111,18 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
     setTimeout(() => setSaveStatus('idle'), 2600);
   };
 
+  const useLiveFrame = async () => {
+    if (!onUseLiveFrame || loadingLiveFrame) return;
+    setLoadingLiveFrame(true);
+    try {
+      await onUseLiveFrame();
+    } finally {
+      setLoadingLiveFrame(false);
+    }
+  };
+
   const canClose = draft.length >= 3;
+  const hasLiveSnapshot = Boolean(liveSnapshotUrl.trim() && onUseLiveFrame);
   const hint =
     draft.length === 0
       ? drawMode
@@ -202,6 +216,11 @@ export default function ZoneEditor({ zones, setZones, frame, setFrame }: Props) 
             <button className="btn" onClick={() => document.getElementById('frameUpload')?.click()}>
               Upload frame / video
             </button>
+            {hasLiveSnapshot && (
+              <button className="btn btn--primary" disabled={loadingLiveFrame} onClick={() => void useLiveFrame()}>
+                {loadingLiveFrame ? 'Loading live frame...' : 'Use live monitor frame'}
+              </button>
+            )}
             {frame.url && (
               <button className="btn" onClick={() => setFrame({ width: 1280, height: 720, url: null })}>
                 Demo scene

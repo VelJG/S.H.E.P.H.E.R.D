@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
-import type { Frame, Incident, Zone, ZoneMetric, ZoneStatus } from '../types';
+import type { Dispatch, SetStateAction } from 'react';
+import type { Frame, Incident, LiveSource, Zone, ZoneMetric, ZoneStatus } from '../types';
 import { DEFAULT_FRAME_H, DEFAULT_FRAME_W } from '../types';
 import CameraStage from './CameraStage';
 import { useLiveData } from '../lib/useLiveData';
@@ -28,30 +29,25 @@ const OTHER_CAMS = [
   { id: 'CAM-05', name: 'Lobby' },
 ];
 
-const RELAY_STREAM_KEY = 'shepherd.live.relay.streamUrl';
-const RELAY_SNAPSHOT_KEY = 'shepherd.live.relay.snapshotUrl';
+type Props = {
+  zones: Zone[];
+  frame: Frame;
+  clock: string;
+  liveSource: LiveSource;
+  setLiveSource: Dispatch<SetStateAction<LiveSource>>;
+  onEditZonesFromLive: () => Promise<void>;
+};
 
-type Props = { zones: Zone[]; frame: Frame; clock: string };
-
-function storedValue(key: string): string {
-  try {
-    return localStorage.getItem(key) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-export default function LiveMonitor({ zones, frame, clock }: Props) {
+export default function LiveMonitor({ zones, frame, clock, liveSource, setLiveSource, onEditZonesFromLive }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [relayStreamUrl, setRelayStreamUrlState] = useState(() => storedValue(RELAY_STREAM_KEY));
-  const [relaySnapshotUrl, setRelaySnapshotUrlState] = useState(() => storedValue(RELAY_SNAPSHOT_KEY));
+  const [capturingLiveFrame, setCapturingLiveFrame] = useState(false);
 
-  const trimmedStreamUrl = relayStreamUrl.trim();
-  const trimmedSnapshotUrl = relaySnapshotUrl.trim();
+  const trimmedStreamUrl = liveSource.streamUrl.trim();
+  const trimmedSnapshotUrl = liveSource.snapshotUrl.trim();
   const hasRelay = Boolean(trimmedStreamUrl && trimmedSnapshotUrl);
   const liveFrame: Frame = hasRelay
-    ? { width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: trimmedStreamUrl, kind: 'image' }
+    ? { width: frame.width || DEFAULT_FRAME_W, height: frame.height || DEFAULT_FRAME_H, url: trimmedStreamUrl, kind: 'image' }
     : frame;
 
   const fullFrameZone = useMemo<Zone>(() => ({
@@ -74,13 +70,18 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
     snapshotUrl: hasRelay ? trimmedSnapshotUrl : '',
   });
 
-  const setRelayStreamUrl = (value: string) => {
-    setRelayStreamUrlState(value);
-    localStorage.setItem(RELAY_STREAM_KEY, value);
+  const updateRelaySource = (patch: Partial<LiveSource>) => {
+    setLiveSource((previous) => ({ ...previous, ...patch }));
   };
-  const setRelaySnapshotUrl = (value: string) => {
-    setRelaySnapshotUrlState(value);
-    localStorage.setItem(RELAY_SNAPSHOT_KEY, value);
+
+  const editZonesFromLive = async () => {
+    if (!trimmedSnapshotUrl || capturingLiveFrame) return;
+    setCapturingLiveFrame(true);
+    try {
+      await onEditZonesFromLive();
+    } finally {
+      setCapturingLiveFrame(false);
+    }
   };
 
   const metricList: ZoneMetric[] = activeZones.map(
@@ -128,8 +129,8 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
                 <input
                   className="input"
                   placeholder="https://xxxx.trycloudflare.com/stream.mjpg"
-                  value={relayStreamUrl}
-                  onChange={(event) => setRelayStreamUrl(event.target.value)}
+                  value={liveSource.streamUrl}
+                  onChange={(event) => updateRelaySource({ streamUrl: event.target.value })}
                 />
               </label>
               <label>
@@ -137,8 +138,8 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
                 <input
                   className="input"
                   placeholder="https://xxxx.trycloudflare.com/snapshot.jpg"
-                  value={relaySnapshotUrl}
-                  onChange={(event) => setRelaySnapshotUrl(event.target.value)}
+                  value={liveSource.snapshotUrl}
+                  onChange={(event) => updateRelaySource({ snapshotUrl: event.target.value })}
                 />
               </label>
             </div>
@@ -171,6 +172,9 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
               <span className="livebar__dot blink" />{live.connected ? 'VISION LIVE' : 'NO PIPELINE'}
             </span>
             <button className="btn pausebtn" disabled={!liveFrame.url} onClick={() => live.setRunning(!live.running)}>{live.running ? 'Pause' : 'Resume / Start'}</button>
+            <button className="btn btn--primary" disabled={!trimmedSnapshotUrl || capturingLiveFrame} onClick={() => void editZonesFromLive()}>
+              {capturingLiveFrame ? 'Loading live frame...' : 'Edit zones on live frame'}
+            </button>
             <button className="btn" onClick={() => void live.reset()}>Reset IDs + heat</button>
             <label className="interval-control">
               Interval ms

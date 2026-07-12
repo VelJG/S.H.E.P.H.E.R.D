@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Frame, Zone } from './types';
+import type { Frame, LiveSource, Zone } from './types';
 import { DEFAULT_FRAME_W, DEFAULT_FRAME_H } from './types';
 import { loadZones, saveZones } from './lib/storage';
 import LiveMonitor from './components/LiveMonitor';
@@ -7,6 +7,38 @@ import ZoneEditor from './components/ZoneEditor';
 import DemoVideo from './components/DemoVideo';
 
 type Tab = 'live' | 'zones' | 'demo';
+
+const RELAY_STREAM_KEY = 'shepherd.live.relay.streamUrl';
+const RELAY_SNAPSHOT_KEY = 'shepherd.live.relay.snapshotUrl';
+
+function storedValue(key: string): string {
+  try {
+    return localStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function cacheBustedUrl(url: string): string {
+  const next = new URL(url, window.location.href);
+  next.searchParams.set('_shepherdTs', String(Date.now()));
+  return next.toString();
+}
+
+async function loadSnapshotFrame(snapshotUrl: string): Promise<Frame> {
+  const url = cacheBustedUrl(snapshotUrl);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({
+      width: img.naturalWidth || DEFAULT_FRAME_W,
+      height: img.naturalHeight || DEFAULT_FRAME_H,
+      url,
+      kind: 'image',
+    });
+    img.onerror = () => resolve({ width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url, kind: 'image' });
+    img.src = url;
+  });
+}
 
 function useClock(): string {
   const [now, setNow] = useState(() => new Date());
@@ -21,11 +53,27 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('live');
   const [zones, setZones] = useState<Zone[]>(() => loadZones());
   const [frame, setFrame] = useState<Frame>({ width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: null });
+  const [liveSource, setLiveSource] = useState<LiveSource>(() => ({
+    streamUrl: storedValue(RELAY_STREAM_KEY),
+    snapshotUrl: storedValue(RELAY_SNAPSHOT_KEY),
+  }));
   const clock = useClock();
 
   useEffect(() => {
     saveZones(zones);
   }, [zones]);
+
+  useEffect(() => {
+    localStorage.setItem(RELAY_STREAM_KEY, liveSource.streamUrl);
+    localStorage.setItem(RELAY_SNAPSHOT_KEY, liveSource.snapshotUrl);
+  }, [liveSource]);
+
+  const useLiveFrameForZones = async () => {
+    const snapshotUrl = liveSource.snapshotUrl.trim();
+    if (!snapshotUrl) return;
+    setFrame(await loadSnapshotFrame(snapshotUrl));
+    setTab('zones');
+  };
 
   return (
     <div className="app">
@@ -67,9 +115,23 @@ export default function App() {
 
       <main className="content">
         {tab === 'live' ? (
-          <LiveMonitor zones={zones} frame={frame} clock={clock} />
+          <LiveMonitor
+            zones={zones}
+            frame={frame}
+            clock={clock}
+            liveSource={liveSource}
+            setLiveSource={setLiveSource}
+            onEditZonesFromLive={useLiveFrameForZones}
+          />
         ) : tab === 'zones' ? (
-          <ZoneEditor zones={zones} setZones={setZones} frame={frame} setFrame={setFrame} />
+          <ZoneEditor
+            zones={zones}
+            setZones={setZones}
+            frame={frame}
+            setFrame={setFrame}
+            liveSnapshotUrl={liveSource.snapshotUrl}
+            onUseLiveFrame={useLiveFrameForZones}
+          />
         ) : (
           <DemoVideo />
         )}
