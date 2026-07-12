@@ -13,7 +13,7 @@ type Props = {
   frame: Frame;
   metrics?: Record<string, ZoneMetric>;
   tracks?: Track[];
-  mode: 'live' | 'editor' | 'demo';
+  mode: 'live' | 'editor' | 'upload';
   draft?: Point[];
   selectedZoneId?: string | null;
   onStageClick?: (p: Point) => void;
@@ -40,8 +40,8 @@ export default function CameraStage({
   const W = frame.width;
   const H = frame.height;
   const s = Math.max(W, H) / 1000;
-  const editable = mode === 'editor' || mode === 'demo';
-  const showTracks = mode === 'live' || mode === 'demo';
+  const editable = mode === 'editor' || mode === 'upload';
+  const showTracks = mode === 'live' || mode === 'upload';
 
   // Map a screen click back to ORIGINAL IMAGE PIXELS regardless of CSS resize.
   const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -100,7 +100,7 @@ export default function CameraStage({
                 <circle key={i} cx={p.x} cy={p.y} r={7 * s} fill={stroke} stroke="#fff" strokeWidth={2 * s} />
               ))}
             {/* live: status pill at top-left of the zone */}
-            {z.points.length >= 3 && (mode === 'live' || mode === 'demo') && m && (
+            {z.points.length >= 3 && (mode === 'live' || mode === 'upload') && m && (
               <g transform={`translate(${bb.minX + 8 * s}, ${bb.minY + 8 * s}) scale(${s})`}>
                 <rect x={0} y={0} width={220} height={22} rx={5} fill="rgba(8,9,11,0.82)" />
                 <text x={8} y={15} fill={stroke} fontFamily="OCRAM Regular, monospace" fontSize={12} fontWeight={600}>
@@ -192,4 +192,5 @@ function BuiltInScene({ w, h }: { w: number; h: number }) {
     </g>
   );
 }
+
 
