@@ -30,8 +30,16 @@ const OTHER_CAMS = [
 
 const RELAY_STREAM_KEY = 'shepherd.live.relay.streamUrl';
 const RELAY_SNAPSHOT_KEY = 'shepherd.live.relay.snapshotUrl';
+const env = (import.meta as any).env ?? {};
+const liveFrameWidth = numberEnv('VITE_LIVE_FRAME_WIDTH', DEFAULT_FRAME_W);
+const liveFrameHeight = numberEnv('VITE_LIVE_FRAME_HEIGHT', DEFAULT_FRAME_H);
 
 type Props = { zones: Zone[]; frame: Frame; clock: string };
+
+function numberEnv(name: string, fallback: number): number {
+  const value = Number(env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
 
 function storedValue(key: string): string {
   try {
@@ -51,7 +59,7 @@ export default function LiveMonitor({ zones, frame, clock }: Props) {
   const trimmedSnapshotUrl = relaySnapshotUrl.trim();
   const hasRelay = Boolean(trimmedStreamUrl && trimmedSnapshotUrl);
   const liveFrame: Frame = hasRelay
-    ? { width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: trimmedStreamUrl, kind: 'image' }
+    ? { width: liveFrameWidth, height: liveFrameHeight, url: trimmedStreamUrl, kind: 'image' }
     : frame;
 
   const fullFrameZone = useMemo<Zone>(() => ({
