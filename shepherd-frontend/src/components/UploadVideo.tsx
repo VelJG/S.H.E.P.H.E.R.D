@@ -14,6 +14,10 @@ const STATUS_COLOR: Record<ZoneStatus, string> = {
   congested: '#ef5b47',
 };
 
+function statusLabel(status: ZoneStatus): string {
+  return status === 'congested' ? 'ALERT' : status;
+}
+
 type SaveStatus = 'idle' | 'saved';
 
 function loadUploadVideoZones(): Zone[] {
@@ -332,7 +336,7 @@ export default function UploadVideo() {
                   </label>
                 </div>
                 <p className="upload-zone-metric">
-                  {metric ? `${metric.status} - wait ${fmtWait(metric.waitSec)} - heat ${(metric.heatMean ?? 0).toFixed(2)}` : 'Waiting for AI test'}
+                  {metric ? `${statusLabel(metric.status)} - wait ${fmtWait(metric.waitSec)} - heat ${(metric.heatMean ?? 0).toFixed(2)}` : 'Waiting for AI test'}
                 </p>
               </div>
             );

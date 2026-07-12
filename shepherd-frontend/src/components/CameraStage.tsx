@@ -8,6 +8,10 @@ const STATUS_COLOR: Record<ZoneStatus, string> = {
   congested: '#ef5b47',
 };
 
+function statusLabel(status: ZoneStatus): string {
+  return status === 'congested' ? 'ALERT' : status.toUpperCase();
+}
+
 type Props = {
   zones: Zone[];
   frame: Frame;
@@ -75,7 +79,8 @@ export default function CameraStage({
       {/* Zones */}
       {zones.map((z) => {
         const m = metrics?.[z.id];
-        const stroke = mode === 'live' && m ? STATUS_COLOR[m.status] : z.color;
+        const hasStatus = (mode === 'live' || mode === 'upload') && m;
+        const stroke = hasStatus ? STATUS_COLOR[m.status] : z.color;
         const selected = z.id === selectedZoneId;
         const bb = z.points.length ? bbox(z.points) : { minX: 0, minY: 0 };
         const n = z.points.length || 1;
@@ -104,7 +109,7 @@ export default function CameraStage({
               <g transform={`translate(${bb.minX + 8 * s}, ${bb.minY + 8 * s}) scale(${s})`}>
                 <rect x={0} y={0} width={220} height={22} rx={5} fill="rgba(8,9,11,0.82)" />
                 <text x={8} y={15} fill={stroke} fontFamily="OCRAM Regular, monospace" fontSize={12} fontWeight={600}>
-                  {z.name} - {m.status.toUpperCase()} - {m.personCount}
+                  {z.name} - {statusLabel(m.status)} - {m.personCount}
                 </text>
               </g>
             )}
