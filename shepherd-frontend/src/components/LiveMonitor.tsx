@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Frame, Incident, LiveSource, Zone, ZoneMetric, ZoneStatus } from '../types';
 import { DEFAULT_FRAME_H, DEFAULT_FRAME_W } from '../types';
@@ -29,6 +29,10 @@ const OTHER_CAMS = [
   { id: 'CAM-05', name: 'Lobby' },
 ];
 
+const env = (import.meta as any).env ?? {};
+const liveFrameWidth = numberEnv('VITE_LIVE_FRAME_WIDTH', DEFAULT_FRAME_W);
+const liveFrameHeight = numberEnv('VITE_LIVE_FRAME_HEIGHT', DEFAULT_FRAME_H);
+
 type Props = {
   zones: Zone[];
   frame: Frame;
@@ -38,16 +42,35 @@ type Props = {
   onEditZonesFromLive: () => Promise<void>;
 };
 
+function numberEnv(name: string, fallback: number): number {
+  const value = Number(env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function cacheBustedUrl(value: string, key: string, tick: number): string {
+  try {
+    const url = new URL(value, window.location.href);
+    url.searchParams.set(key, String(tick));
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
 export default function LiveMonitor({ zones, frame, clock, liveSource, setLiveSource, onEditZonesFromLive }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [snapshotTick, setSnapshotTick] = useState(() => Date.now());
   const [capturingLiveFrame, setCapturingLiveFrame] = useState(false);
 
   const trimmedStreamUrl = liveSource.streamUrl.trim();
   const trimmedSnapshotUrl = liveSource.snapshotUrl.trim();
-  const hasRelay = Boolean(trimmedStreamUrl && trimmedSnapshotUrl);
+  const hasStream = Boolean(trimmedStreamUrl);
+  const hasSnapshot = Boolean(trimmedSnapshotUrl);
+  const hasRelay = hasStream || hasSnapshot;
+  const snapshotOnly = hasSnapshot && !hasStream;
   const liveFrame: Frame = hasRelay
-    ? { width: frame.width || DEFAULT_FRAME_W, height: frame.height || DEFAULT_FRAME_H, url: trimmedStreamUrl, kind: 'image' }
+    ? { width: liveFrameWidth, height: liveFrameHeight, url: hasStream ? trimmedStreamUrl : trimmedSnapshotUrl, kind: 'image' }
     : frame;
 
   const fullFrameZone = useMemo<Zone>(() => ({
@@ -67,8 +90,18 @@ export default function LiveMonitor({ zones, frame, clock, liveSource, setLiveSo
 
   const activeZones = zones.length ? zones : hasRelay ? [fullFrameZone] : zones;
   const live = useLiveData(activeZones, liveFrame, videoRef, heatCanvasRef, {
-    snapshotUrl: hasRelay ? trimmedSnapshotUrl : '',
+    snapshotUrl: hasSnapshot ? trimmedSnapshotUrl : '',
   });
+  const displayFrame: Frame = snapshotOnly
+    ? { ...liveFrame, url: cacheBustedUrl(trimmedSnapshotUrl, '_viewTs', snapshotTick) }
+    : liveFrame;
+
+  useEffect(() => {
+    if (!snapshotOnly || !live.running) return;
+    const delay = Math.max(250, Math.min(1000, live.intervalMs));
+    const timer = window.setTimeout(() => setSnapshotTick(Date.now()), delay);
+    return () => window.clearTimeout(timer);
+  }, [live.intervalMs, live.running, snapshotOnly, snapshotTick]);
 
   const updateRelaySource = (patch: Partial<LiveSource>) => {
     setLiveSource((previous) => ({ ...previous, ...patch }));
@@ -120,12 +153,12 @@ export default function LiveMonitor({ zones, frame, clock, liveSource, setLiveSo
             <div className="live-source-panel__head">
               <span className="rail__label">LIVE IP CAMERA RELAY</span>
               <span className={`source-state ${hasRelay ? 'source-state--on' : ''}`}>
-                {hasRelay ? 'relay ready' : 'waiting for relay URLs'}
+                {hasSnapshot ? (hasStream ? 'stream + AI ready' : 'snapshot live ready') : hasStream ? 'stream only' : 'waiting for relay URL'}
               </span>
             </div>
             <div className="live-source-grid">
               <label>
-                Stream URL
+                Stream URL (optional)
                 <input
                   className="input"
                   placeholder="https://xxxx.trycloudflare.com/stream.mjpg"
@@ -134,7 +167,7 @@ export default function LiveMonitor({ zones, frame, clock, liveSource, setLiveSo
                 />
               </label>
               <label>
-                Snapshot URL
+                Snapshot URL (fastest)
                 <input
                   className="input"
                   placeholder="https://xxxx.trycloudflare.com/snapshot.jpg"
@@ -144,26 +177,25 @@ export default function LiveMonitor({ zones, frame, clock, liveSource, setLiveSo
               </label>
             </div>
             <p className="savehint">
-              Run the laptop relay + Cloudflare tunnel, paste both URLs here, then press Resume/Start.
-              If no zones are saved, the AI uses a full-frame live zone for the demo.
+              Fastest mode: leave Stream URL blank and paste Snapshot URL only. The visual feed will poll snapshots while AI uses the same source.
             </p>
           </div>
 
           <div className="feed">
-            {liveFrame.kind === 'video' && liveFrame.url && (
-              <video ref={videoRef} className="feedvideo" src={liveFrame.url} autoPlay loop muted playsInline />
+            {displayFrame.kind === 'video' && displayFrame.url && (
+              <video ref={videoRef} className="feedvideo" src={displayFrame.url} autoPlay loop muted playsInline />
             )}
-            {liveFrame.kind === 'image' && liveFrame.url && (
-              <img className="feedvideo" src={liveFrame.url} alt={hasRelay ? 'Live IP camera stream' : 'Uploaded camera frame'} />
+            {displayFrame.kind === 'image' && displayFrame.url && (
+              <img className="feedvideo" src={displayFrame.url} alt={hasRelay ? 'Live IP camera feed' : 'Uploaded camera frame'} />
             )}
             <canvas ref={heatCanvasRef} className="heatmap-layer" aria-hidden="true" />
-            <CameraStage zones={activeZones} frame={liveFrame} metrics={live.metrics} tracks={live.tracks} mode="live" />
+            <CameraStage zones={activeZones} frame={displayFrame} metrics={live.metrics} tracks={live.tracks} mode="live" />
             <div className="ov ov-live">
               <span className="ov-live__dot rec" style={{ background: live.connected ? '#ef5b47' : '#565c65' }} />
               <span className="ov-live__txt">{live.connected ? 'LIVE' : 'OFFLINE'}</span>
             </div>
-            <div className="ov ov-res">{liveFrame.width} x {liveFrame.height} - {live.latencyMs || 0}ms</div>
-            <div className="ov ov-cam">{hasRelay ? 'IP CAM RELAY' : 'CAM-03 - Main'}</div>
+            <div className="ov ov-res">{displayFrame.width} x {displayFrame.height} - {live.latencyMs || 0}ms</div>
+            <div className="ov ov-cam">{hasRelay ? (snapshotOnly ? 'IP CAM SNAPSHOT' : 'IP CAM RELAY') : 'CAM-03 - Main'}</div>
             <div className="ov ov-time">{today} {clock}</div>
           </div>
 

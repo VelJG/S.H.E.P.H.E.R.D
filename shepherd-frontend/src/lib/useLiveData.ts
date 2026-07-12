@@ -4,8 +4,15 @@ import { TemporalHeatmap } from './temporalHeatmap';
 
 const env = (import.meta as any).env ?? {};
 const API_URL = env.VITE_API_URL || '';
-const YOLO_URL = env.VITE_YOLO_URL || (API_URL ? `${API_URL}/demo/infer-frame` : '/api/yolo/invocations');
-const TRACK_URL = env.VITE_TRACKER_URL || (API_URL ? `${API_URL}/demo/track` : '/api/tracker/track');
+
+function endpoint(base: string, path: string): string {
+  return `${base.replace(/\/+$/, '')}${path}`;
+}
+
+const YOLO_URL = env.VITE_YOLO_URL
+  || (API_URL ? `${API_URL}/demo/infer-frame` : env.VITE_YOLO_TARGET ? endpoint(env.VITE_YOLO_TARGET, '/invocations') : '/api/yolo/invocations');
+const TRACK_URL = env.VITE_TRACKER_URL
+  || (API_URL ? `${API_URL}/demo/track` : env.VITE_TRACKER_TARGET ? endpoint(env.VITE_TRACKER_TARGET, '/track') : '/api/tracker/track');
 const RESET_URL = TRACK_URL.replace(/\/track\/?$/, '/reset');
 const HISTORY_LEN = 28;
 

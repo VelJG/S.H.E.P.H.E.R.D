@@ -58,3 +58,23 @@ On this machine, Docker mounts YOLO weights from:
 ```text
 D:\AI_Data\SHEPHERD\models\yolo
 ```
+
+## Local Backup Demo
+
+If AWS or SageMaker is unavailable during the demo, run the local backup path:
+
+```text
+local Vite frontend -> local YOLO :8080 -> local ByteTrack :8090
+```
+
+Runbook:
+
+```text
+docs/local-backup-demo.md
+```
+
+The phone camera relay script is:
+
+```powershell
+python scripts/camera-relay.py --camera-base http://PHONE_IP:8080
+```

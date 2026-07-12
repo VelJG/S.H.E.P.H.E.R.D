@@ -77,6 +77,8 @@ Timing assumptions:
   - `PATCH /tasks/{id}`
 - DynamoDB `ConfigZones` table added for zone editor output.
 - `PUT /config/zones` validates and stores the latest default zone config for the dashboard and stream processor.
+- Local backup demo runbook added at `docs/local-backup-demo.md`.
+- Reusable phone camera relay script added at `scripts/camera-relay.py`.
 
 ## Immediate Next Tasks
 
@@ -84,7 +86,8 @@ Timing assumptions:
 2. Confirm teammate ByteTrack/zone contract using `tracks.jsonl`.
 3. Validate backend `GET /config/zones`, `POST /metrics`, `GET /uploads/presign`,
    and `POST /incidents` against the deployed API.
-4. Keep stream-processor output shape aligned with:
+4. Rehearse local backup demo from `docs/local-backup-demo.md` before the final demo.
+5. Keep stream-processor output shape aligned with:
 
 ```json
 {
@@ -102,9 +105,9 @@ Timing assumptions:
 }
 ```
 
-5. Wire frontend Zone Editor save action to backend `PUT /config/zones`.
-6. Replace local video source with realtime camera source.
-7. Tune incident thresholds/cooldown using live demo footage.
+6. Wire frontend Zone Editor save action to backend `PUT /config/zones`.
+7. Replace local video source with realtime camera source.
+8. Tune incident thresholds/cooldown using live demo footage.
 
 ## YOLO Inference Tasks
 

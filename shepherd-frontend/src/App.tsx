@@ -4,9 +4,9 @@ import { DEFAULT_FRAME_W, DEFAULT_FRAME_H } from './types';
 import { loadZones, saveZones } from './lib/storage';
 import LiveMonitor from './components/LiveMonitor';
 import ZoneEditor from './components/ZoneEditor';
-import DemoVideo from './components/DemoVideo';
+import UploadVideo from './components/UploadVideo';
 
-type Tab = 'live' | 'zones' | 'demo';
+type Tab = 'live' | 'zones' | 'upload';
 
 const RELAY_STREAM_KEY = 'shepherd.live.relay.streamUrl';
 const RELAY_SNAPSHOT_KEY = 'shepherd.live.relay.snapshotUrl';
@@ -100,7 +100,7 @@ export default function App() {
           <button className={`navtab ${tab === 'zones' ? 'navtab--on' : ''}`} onClick={() => setTab('zones')}>
             Zone Editor
           </button>
-          <button className={`navtab ${tab === 'demo' ? 'navtab--on' : ''}`} onClick={() => setTab('demo')}>
+          <button className={`navtab ${tab === 'upload' ? 'navtab--on' : ''}`} onClick={() => setTab('upload')}>
             Upload Video
           </button>
         </nav>
@@ -133,9 +133,10 @@ export default function App() {
             onUseLiveFrame={useLiveFrameForZones}
           />
         ) : (
-          <DemoVideo />
+          <UploadVideo />
         )}
       </main>
     </div>
   );
 }
+

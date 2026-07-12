@@ -5,7 +5,7 @@ import CameraStage from './CameraStage';
 import { exportForProcessor } from '../lib/storage';
 import { useLiveData } from '../lib/useLiveData';
 
-const DEMO_KEY = 'shepherd.demo.zones.v1';
+const UPLOAD_VIDEO_ZONES_KEY = 'shepherd.uploadVideo.zones.v1';
 const PALETTE = ['#4c9aff', '#d6a743', '#8b5cf6', '#2dd4bf', '#f472b6', '#fb923c'];
 
 const STATUS_COLOR: Record<ZoneStatus, string> = {
@@ -16,9 +16,9 @@ const STATUS_COLOR: Record<ZoneStatus, string> = {
 
 type SaveStatus = 'idle' | 'saved';
 
-function loadDemoZones(): Zone[] {
+function loadUploadVideoZones(): Zone[] {
   try {
-    const raw = localStorage.getItem(DEMO_KEY);
+    const raw = localStorage.getItem(UPLOAD_VIDEO_ZONES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -40,8 +40,8 @@ function fmtTime(sec: number): string {
   return `${m}:${s}`;
 }
 
-export default function DemoVideo() {
-  const [zones, setZones] = useState<Zone[]>(() => loadDemoZones());
+export default function UploadVideo() {
+  const [zones, setZones] = useState<Zone[]>(() => loadUploadVideoZones());
   const [frame, setFrame] = useState<Frame>({ width: DEFAULT_FRAME_W, height: DEFAULT_FRAME_H, url: null });
   const [draft, setDraft] = useState<Point[]>([]);
   const [name, setName] = useState('');
@@ -62,7 +62,7 @@ export default function DemoVideo() {
   const live = useLiveData(zones, frame, videoRef, heatCanvasRef, { initialRunning: false });
 
   useEffect(() => {
-    localStorage.setItem(DEMO_KEY, JSON.stringify(zones));
+    localStorage.setItem(UPLOAD_VIDEO_ZONES_KEY, JSON.stringify(zones));
   }, [zones]);
 
   const addPoint = (point: Point) => setDraft((previous) => [...previous, point]);
@@ -83,8 +83,8 @@ export default function DemoVideo() {
     const used = zones.map((zone) => zone.color);
     const color = PALETTE.find((item) => !used.includes(item)) || PALETTE[zones.length % PALETTE.length];
     const zone: Zone = {
-      id: `demo-${Date.now().toString().slice(-6)}`,
-      name: name.trim() || `Demo Zone ${zones.length + 1}`,
+      id: `upload-${Date.now().toString().slice(-6)}`,
+      name: name.trim() || `Video Zone ${zones.length + 1}`,
       color,
       points: draft,
       warnAt: 4,
@@ -151,8 +151,8 @@ export default function DemoVideo() {
     setCurrentTime(value);
   };
 
-  const saveDemoZones = () => {
-    localStorage.setItem(DEMO_KEY, JSON.stringify(zones));
+  const saveUploadVideoZones = () => {
+    localStorage.setItem(UPLOAD_VIDEO_ZONES_KEY, JSON.stringify(zones));
     setSaveStatus('saved');
     setTimeout(() => setSaveStatus('idle'), 1800);
   };
@@ -162,7 +162,7 @@ export default function DemoVideo() {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'demo-zones.json';
+    link.download = 'upload-video-zones.json';
     link.click();
   };
 
@@ -176,7 +176,7 @@ export default function DemoVideo() {
   );
   const hint =
     draft.length === 0
-      ? 'Upload a demo video or frame, pause on a useful moment, then draw zones for AI testing.'
+      ? 'Upload a video or frame, pause on a useful moment, then draw zones for AI testing.'
       : `Drawing ${draft.length} point${draft.length > 1 ? 's' : ''}. Press Close zone when the polygon is ready.`;
 
   return (
@@ -184,7 +184,7 @@ export default function DemoVideo() {
       <div className="spotlight__body">
         <div className="center">
           <div className="tiles">
-            <Tile label="Demo zones" value={String(zones.length)} delta={frame.kind ?? 'no media'} />
+            <Tile label="Video zones" value={String(zones.length)} delta={frame.kind ?? 'no media'} />
             <Tile label="Tracked IDs" value={String(live.tracks.length)} delta={live.processing ? 'processing' : `${live.latencyMs}ms`} color="#f7b955" />
             <Tile label="People in zones" value={String(totalPeople)} delta={`${metricList.length} active`} />
             <Tile
@@ -219,26 +219,26 @@ export default function DemoVideo() {
                 onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
               />
             )}
-            {frame.kind === 'image' && frame.url && <img className="feedvideo" src={frame.url} alt="Uploaded demo frame" />}
+            {frame.kind === 'image' && frame.url && <img className="feedvideo" src={frame.url} alt="Uploaded video frame" />}
             <canvas ref={heatCanvasRef} className="heatmap-layer" aria-hidden="true" />
             <CameraStage
               zones={zones}
               frame={frame}
               metrics={live.metrics}
               tracks={live.tracks}
-              mode="demo"
+              mode="upload"
               draft={draft}
               selectedZoneId={selectedId}
               onStageClick={drawMode && !naming ? addPoint : undefined}
               onSelectZone={setSelectedId}
             />
-            <div className="ov editlabel">DEMO - {frame.width} x {frame.height}{frame.kind === 'video' ? ` - ${fmtTime(currentTime)}` : ''}</div>
+            <div className="ov editlabel">UPLOAD VIDEO - {frame.width} x {frame.height}{frame.kind === 'video' ? ` - ${fmtTime(currentTime)}` : ''}</div>
             <div className="ov ov-res">{live.connected ? 'AI connected' : 'AI idle'}</div>
 
             {naming && (
               <div className="namepop">
                 <div className="namepop__card">
-                  <div className="namepop__title">Name demo zone</div>
+                  <div className="namepop__title">Name video zone</div>
                   <input
                     className="input"
                     autoFocus
@@ -259,7 +259,7 @@ export default function DemoVideo() {
             )}
           </div>
 
-          <div className="demo-controls">
+          <div className="upload-controls">
             <input ref={inputRef} type="file" accept="image/*,video/*" hidden onChange={onUpload} />
             <button className="btn btn--primary" onClick={() => inputRef.current?.click()}>Upload video / frame</button>
             <button className="btn" disabled={frame.kind !== 'video'} onClick={() => void toggleMedia()}>
@@ -279,7 +279,7 @@ export default function DemoVideo() {
           </div>
 
           {frame.kind === 'video' && (
-            <div className="demo-scrub">
+            <div className="upload-scrub">
               <span>{fmtTime(currentTime)}</span>
               <input type="range" min={0} max={duration || 0} step={0.05} value={Math.min(currentTime, duration || 0)} onChange={(event) => seek(Number(event.target.value))} />
               <span>{fmtTime(duration)}</span>
@@ -288,7 +288,7 @@ export default function DemoVideo() {
 
           <div className="livebar">
             <span className="livebar__pill" style={{ background: live.connected ? '#ef5b47' : '#565c65' }}>
-              <span className="livebar__dot blink" />{live.connected ? 'DEMO AI' : 'NO AI'}
+              <span className="livebar__dot blink" />{live.connected ? 'AI ACTIVE' : 'NO AI'}
             </span>
             {live.processing && <span className="pipeline-note">YOLO to ByteTrack to heatmap</span>}
             {live.error && <span className="pipeline-error" title={live.error}>{live.error}</span>}
@@ -297,12 +297,12 @@ export default function DemoVideo() {
 
         <aside className="rail">
           <div className="rail__head">
-            <span className="rail__label">DEMO ZONES</span>
+            <span className="rail__label">VIDEO ZONES</span>
             <span className="muted small">{zones.length}</span>
           </div>
           {zones.length === 0 && (
             <div className="zempty">
-              No demo zones yet.<br />Upload media, pause on a useful frame, then click the stage to draw.
+              No video zones yet.<br />Upload media, pause on a useful frame, then click the stage to draw.
             </div>
           )}
           {zones.map((zone) => {
@@ -331,19 +331,19 @@ export default function DemoVideo() {
                     <input type="number" className="input input--num" value={zone.avgServiceSec} onChange={(event) => updateZone(zone.id, { avgServiceSec: +event.target.value })} />
                   </label>
                 </div>
-                <p className="demo-zone-metric">
+                <p className="upload-zone-metric">
                   {metric ? `${metric.status} - wait ${fmtWait(metric.waitSec)} - heat ${(metric.heatMean ?? 0).toFixed(2)}` : 'Waiting for AI test'}
                 </p>
               </div>
             );
           })}
 
-          <button className={`savebtn savebtn--${saveStatus}`} disabled={!zones.length} onClick={saveDemoZones}>
-            {saveStatus === 'saved' ? 'Saved demo zones' : 'Save demo zones'}
+          <button className={`savebtn savebtn--${saveStatus}`} disabled={!zones.length} onClick={saveUploadVideoZones}>
+            {saveStatus === 'saved' ? 'Saved video zones' : 'Save video zones'}
           </button>
-          <button className="btn" disabled={!zones.length} onClick={downloadZones}>Export demo-zones.json</button>
+          <button className="btn" disabled={!zones.length} onClick={downloadZones}>Export upload-video-zones.json</button>
           <p className="savehint">
-            Demo zones are isolated from Live Monitor. They are sent to ByteTrack while this tab runs the AI test.
+            Upload video zones are isolated from Live Monitor. They are sent to ByteTrack while this tab runs the AI test.
           </p>
         </aside>
       </div>
@@ -362,3 +362,4 @@ function Tile({ label, value, delta, color }: { label: string; value: string; de
     </div>
   );
 }
+
