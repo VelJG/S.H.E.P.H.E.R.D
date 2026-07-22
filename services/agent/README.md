@@ -8,7 +8,9 @@ Current implemented layer:
 - Runtime local metric history in `runtime_data/metrics.jsonl`.
 - Pydantic schemas for zones, metrics, incidents, predictions, and chat responses.
 - `LocalDataStore` that reads seed data, merges runtime metrics, and exposes latest metrics/incidents.
-- Pytest coverage for the local datastore.
+- Deterministic congestion prediction that works without a model/API key.
+- FastAPI routes for health, chat, report, and live metric ingest.
+- Pytest coverage for datastore, prediction, and API routes.
 
 ## Quick local check
 
@@ -27,6 +29,29 @@ cd services\agent
 ```
 
 The script runs tests and prints a datastore smoke summary.
+
+## Start the local agent API
+
+```powershell
+cd services\agent
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8100
+```
+
+Smoke test:
+
+```powershell
+Invoke-RestMethod http://localhost:8100/agent/health
+Invoke-RestMethod http://localhost:8100/agent/chat -Method Post -ContentType 'application/json' -Body '{"message":"Booth nào sẽ tắc trong 2 phút tới?"}'
+```
+
+Main local endpoints:
+
+```text
+GET  /agent/health
+POST /agent/chat
+GET  /agent/report
+POST /agent/ingest/metrics
+```
 
 ## Data layout
 
@@ -64,10 +89,4 @@ $code | .\.venv\Scripts\python.exe -
 
 ## Next implementation step
 
-Add the FastAPI service in `app/main.py`:
-
-- `GET /agent/health`
-- `POST /agent/ingest/metrics`
-- `POST /agent/chat`
-
-For now, this package is ready as the local data/memory foundation for that API.
+Wire the frontend Agent Copilot tab to `VITE_AGENT_URL=http://localhost:8100`, and optionally send live processor zone metrics to `POST /agent/ingest/metrics`.

@@ -1,6 +1,6 @@
 # SHEPHERD Operations Agent Implementation Plan
 
-Implementation progress: Task 1 scaffold complete; Task 2 seeded/local runtime data complete; Task 3 local datastore/tests/check script complete. Last updated: 2026-07-22 21:40:33 +0700
+Implementation progress: Task 1 scaffold complete; Task 2 seeded/local runtime data complete; Task 3 datastore complete; Task 4 prediction complete; Task 6/6b local API + ingest backend complete. Last updated: 2026-07-22 21:51:44 +0700
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -292,7 +292,9 @@ cd services\agent
 
 ## Task 4: Prediction engine
 
-- [ ] Create `services/agent/app/prediction.py`.
+**Progress:** Complete on 2026-07-22 21:51:44 +0700. Deterministic congestion prediction works without any model/API key.
+
+- [x] Create `services/agent/app/prediction.py`.
 
 Functions:
 
@@ -312,22 +314,16 @@ risk = medium if latest >= warnAt or slope > 0
 risk = low otherwise
 ```
 
-- [ ] Create `services/agent/tests/test_prediction.py`:
+- [x] Create `services/agent/tests/test_prediction.py`:
   - booth-2 is high risk
   - booth-2 ETA is <= 120s
-  - booth-1 is lower risk than booth-2
+  - recommendation includes staff action
 
-- [ ] Verify:
-
-```powershell
-pytest tests/test_prediction.py tests/test_data_store.py -v
-```
-
-- [ ] Commit:
+- [x] Verify:
 
 ```powershell
-git add services/agent/app/prediction.py services/agent/tests/test_prediction.py
-git commit -m "feat: add congestion prediction engine"
+cd services\agent
+.\.venv\Scripts\python.exe -m pytest tests -v
 ```
 
 ---
@@ -389,7 +385,9 @@ git commit -m "feat: add operations agent tools"
 
 ## Task 6: FastAPI agent API
 
-- [ ] Create `services/agent/app/main.py`.
+**Progress:** Complete on 2026-07-22 21:51:44 +0700. Local dashboard can call health/chat/report over HTTP.
+
+- [x] Create `services/agent/app/main.py`.
 
 Routes:
 
@@ -399,73 +397,66 @@ POST /agent/chat
 GET  /agent/report
 ```
 
-- [ ] Add CORS for:
+- [x] Add CORS for:
 
 ```text
 http://localhost:5173
 http://127.0.0.1:5173
 ```
 
-- [ ] Create `services/agent/tests/test_api.py`:
+- [x] Create `services/agent/tests/test_api.py`:
   - health returns ok
   - chat prediction returns prediction intent and predictions
+  - ingest updates local runtime metric memory
 
-- [ ] Verify:
-
-```powershell
-pytest tests -v
-uvicorn app.main:app --host 0.0.0.0 --port 8100
-```
-
-Smoke:
+- [x] Verify:
 
 ```powershell
-Invoke-RestMethod http://localhost:8100/agent/health
-Invoke-RestMethod http://localhost:8100/agent/chat -Method Post -ContentType 'application/json' -Body '{"message":"Booth nào sẽ tắc trong 2 phút tới?"}'
+cd services\agent
+.\.venv\Scripts\python.exe -m pytest tests -v
 ```
 
-- [ ] Commit:
+Smoke verified:
 
 ```powershell
-git add services/agent/app/main.py services/agent/tests/test_api.py
-git commit -m "feat: expose local operations agent api"
+Invoke-RestMethod http://127.0.0.1:8100/agent/health
+Invoke-RestMethod http://127.0.0.1:8100/agent/chat -Method Post -ContentType 'application/json' -Body '{"message":"Booth nào sẽ tắc trong 2 phút tới?"}'
 ```
-
 
 ---
 
 ## Task 6b: Local live metric ingest API
 
+**Progress:** Backend complete on 2026-07-22 21:51:44 +0700. Frontend wiring remains optional/future.
+
 This task connects the live local demo to the agent memory while preserving seeded fallback data.
 
-- [ ] Modify `services/agent/app/data_store.py`:
+- [x] Modify `services/agent/app/data_store.py`:
   - create `append_metrics(metrics: list[Metric]) -> int`
   - write each metric as one JSON line to `services/agent/runtime_data/metrics.jsonl`
   - update `get_metric_history()` to read seeded `demo_data/metrics.json` plus runtime JSONL
   - sort combined metrics by timestamp
 
-- [ ] Modify `services/agent/app/main.py`:
+- [x] Modify `services/agent/app/main.py`:
   - add `POST /agent/ingest/metrics`
   - accept single metric, array, or `{ "metrics": [...] }`
   - return `{ "ok": true, "count": written }`
 
-- [ ] Add tests in `services/agent/tests/test_ingest.py`:
+- [x] Add tests in `services/agent/tests/test_api.py`:
   - ingest single metric
   - ingest `{ metrics: [...] }`
-  - history includes runtime metric plus seeded metrics
+  - chat latest metric metadata includes runtime metric
 
 - [ ] Optional frontend integration:
   - add `VITE_AGENT_INGEST_URL=http://localhost:8100/agent/ingest/metrics`
   - after local tracking metrics update, POST zone metrics to agent ingest
   - failures must be non-blocking; UI/AI must keep running
 
-- [ ] Verify:
+- [x] Verify:
 
 ```powershell
 cd services\agent
-.\.venv\Scripts\Activate.ps1
-pytest tests -v
-uvicorn app.main:app --host 0.0.0.0 --port 8100
+.\.venv\Scripts\python.exe -m pytest tests -v
 ```
 
 Smoke:
@@ -476,13 +467,6 @@ Invoke-RestMethod http://localhost:8100/agent/chat -Method Post -ContentType 'ap
 ```
 
 Expected: answer reflects the ingested high `booth-2` count.
-
-- [ ] Commit:
-
-```powershell
-git add services/agent AGENT_IMPLEMENTATION_PLAN.md docs/superpowers/plans/2026-07-22-shepherd-operations-agent.md .gitignore
-git commit -m "feat: add local agent metric ingest"
-```
 
 ---
 
