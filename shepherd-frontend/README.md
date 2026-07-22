@@ -18,7 +18,8 @@ deploy). Runs on mock/simulated tracking so it demos without a backend.
   response task workflow fires. It also posts latest local zone metrics to the
   local agent ingest endpoint.
 - **Agent Copilot** — asks the local operations agent natural-language questions,
-  shows the answer, prediction cards, used tool chain, and latest metrics memory.
+  shows the answer, prediction cards, used tool chain, latest metrics memory, and
+  proactive autonomous monitor alerts.
 
 ## Run
 
@@ -45,7 +46,7 @@ VITE_AGENT_URL=http://localhost:8100
 VITE_AGENT_INGEST_URL=http://localhost:8100/agent/ingest/metrics
 ```
 
-Then open the **Agent Copilot** tab and ask: `Booth nào sẽ tắc trong 2 phút tới?`.
+Then open the **Agent Copilot** tab. The autonomous monitor panel polls `/agent/alerts` every 5 seconds, and the operator can still ask: `Booth nào sẽ tắc trong 2 phút tới?`.
 
 ## Wiring to the real backend later
 

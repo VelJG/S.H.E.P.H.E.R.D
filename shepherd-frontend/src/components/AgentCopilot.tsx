@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AGENT_URL, askAgent, getAgentHealth, type AgentChatResponse, type AgentHealth } from '../lib/agentClient';
+import { AGENT_URL, askAgent, getAgentAlerts, getAgentHealth, runAgentMonitorOnce, type AgentAlert, type AgentChatResponse, type AgentHealth } from '../lib/agentClient';
 
 const QUICK_QUESTIONS = [
   'Booth nào sẽ tắc trong 2 phút tới?',
@@ -18,8 +18,15 @@ export default function AgentCopilot() {
   const [health, setHealth] = useState<AgentHealth | null>(null);
   const [question, setQuestion] = useState(QUICK_QUESTIONS[0]);
   const [response, setResponse] = useState<AgentChatResponse | null>(null);
+  const [alerts, setAlerts] = useState<AgentAlert[]>([]);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
+
+  const refreshAlerts = async () => {
+    const items = await getAgentAlerts('open');
+    setAlerts(items);
+  };
 
   useEffect(() => {
     getAgentHealth()
@@ -28,6 +35,11 @@ export default function AgentCopilot() {
         setError('');
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+    refreshAlerts().catch(() => { /* agent alert polling retries below */ });
+    const timer = window.setInterval(() => {
+      refreshAlerts().catch(() => { /* keep UI usable if agent is temporarily down */ });
+    }, 5000);
+    return () => window.clearInterval(timer);
   }, []);
 
   const latestMetrics = useMemo(() => {
@@ -50,6 +62,21 @@ export default function AgentCopilot() {
     }
   };
 
+  const runMonitor = async () => {
+    if (checking) return;
+    setChecking(true);
+    setError('');
+    try {
+      await runAgentMonitorOnce();
+      await refreshAlerts();
+      setHealth(await getAgentHealth());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   return (
     <div className="agent-page">
       <section className="agent-hero">
@@ -64,9 +91,37 @@ export default function AgentCopilot() {
           <span className="online__dot" />
           <div>
             <strong>{health?.ok ? 'Agent online' : 'Agent offline'}</strong>
-            <small>{health ? `${health.service} · ${health.zones} zones` : AGENT_URL}</small>
+            <small>{health ? `${health.service} · ${health.zones} zones · ${health.openAgentAlerts ?? alerts.length} alerts` : AGENT_URL}</small>
           </div>
         </div>
+      </section>
+
+      <section className="agent-card agent-autonomous" aria-labelledby="agent-alerts-label">
+        <div className="agent-autonomous__head">
+          <div>
+            <span id="agent-alerts-label" className="rail__label">AUTONOMOUS MONITOR</span>
+            <p className="muted small">Runs in the agent service and creates proactive alerts from live metrics.</p>
+          </div>
+          <button className="btn" disabled={checking} onClick={() => void runMonitor()}>
+            {checking ? 'Checking...' : 'Run check now'}
+          </button>
+        </div>
+        {alerts.length === 0 ? (
+          <p className="agent-alert-empty">No open agent alerts yet. Start live tracking or run a check.</p>
+        ) : (
+          <div className="agent-alerts">
+            {alerts.map((alert) => (
+              <article key={alert.alertId} className="agent-alert">
+                <div className="agent-alert__top">
+                  <strong>{alert.zoneName}</strong>
+                  <span>{alert.severity.toUpperCase()}</span>
+                </div>
+                <p>{alert.reason}</p>
+                <small>ETA {alert.etaSeconds === null ? 'n/a' : `${alert.etaSeconds}s`} · {alert.recommendation}</small>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="agent-card" aria-labelledby="agent-question-label">

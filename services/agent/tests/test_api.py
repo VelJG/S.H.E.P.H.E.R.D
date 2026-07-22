@@ -50,7 +50,10 @@ def test_ingest_single_metric_affects_chat(tmp_path: Path):
         },
     )
     assert ingest_response.status_code == 200
-    assert ingest_response.json() == {"ok": True, "count": 1}
+    ingest_body = ingest_response.json()
+    assert ingest_body["ok"] is True
+    assert ingest_body["count"] == 1
+    assert ingest_body["alert"]["zoneId"] == "booth-2"
 
     chat_response = subject.post("/agent/chat", json={"message": "Booth nào đang tắc?"})
     body = chat_response.json()
@@ -77,4 +80,7 @@ def test_ingest_metrics_wrapper(tmp_path: Path):
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "count": 1}
+    body = response.json()
+    assert body["ok"] is True
+    assert body["count"] == 1
+    assert "alert" in body

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from app.schemas import Incident, Metric, Zone
+from app.schemas import AgentAlert, Incident, Metric, Zone
 
 
 class LocalDataStore:
@@ -18,6 +18,7 @@ class LocalDataStore:
         self.data_dir = Path(data_dir)
         self.runtime_dir = Path(runtime_dir) if runtime_dir else self.data_dir.parent / "runtime_data"
         self.runtime_metrics_path = self.runtime_dir / "metrics.jsonl"
+        self.runtime_alerts_path = self.runtime_dir / "agent_alerts.jsonl"
 
     def _read_json_array(self, name: str) -> list[dict]:
         path = self.data_dir / name
@@ -27,11 +28,11 @@ class LocalDataStore:
             raise ValueError(f"{path} must contain a JSON array")
         return value
 
-    def _read_runtime_metrics(self) -> list[dict]:
-        if not self.runtime_metrics_path.exists():
+    def _read_jsonl_objects(self, path: Path) -> list[dict]:
+        if not path.exists():
             return []
         items: list[dict] = []
-        with self.runtime_metrics_path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
                 raw = line.strip()
                 if not raw:
@@ -39,11 +40,14 @@ class LocalDataStore:
                 try:
                     value = json.loads(raw)
                 except json.JSONDecodeError as exc:
-                    raise ValueError(f"Invalid JSONL at {self.runtime_metrics_path}:{line_number}") from exc
+                    raise ValueError(f"Invalid JSONL at {path}:{line_number}") from exc
                 if not isinstance(value, dict):
-                    raise ValueError(f"Runtime metric at {self.runtime_metrics_path}:{line_number} must be an object")
+                    raise ValueError(f"JSONL item at {path}:{line_number} must be an object")
                 items.append(value)
         return items
+
+    def _read_runtime_metrics(self) -> list[dict]:
+        return self._read_jsonl_objects(self.runtime_metrics_path)
 
     def get_zones(self) -> list[Zone]:
         return [Zone.model_validate(item) for item in self._read_json_array("zones.json")]
@@ -79,6 +83,21 @@ class LocalDataStore:
                 payload = metric.model_dump(by_alias=True, mode="json")
                 handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
         return len(parsed)
+
+    def append_agent_alert(self, alert: AgentAlert | dict) -> AgentAlert:
+        parsed = alert if isinstance(alert, AgentAlert) else AgentAlert.model_validate(alert)
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        payload = parsed.model_dump(by_alias=True, mode="json")
+        with self.runtime_alerts_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+        return parsed
+
+    def list_agent_alerts(self, status: str | None = None, limit: int = 20) -> list[AgentAlert]:
+        items = [AgentAlert.model_validate(item) for item in self._read_jsonl_objects(self.runtime_alerts_path)]
+        if status:
+            items = [item for item in items if item.status == status]
+        items.sort(key=lambda item: item.created_at, reverse=True)
+        return items[:max(1, limit)]
 
 
 def _default_store() -> LocalDataStore:

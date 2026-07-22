@@ -10,8 +10,9 @@ Current implemented layer:
 - `LocalDataStore` that reads seed data, merges runtime metrics, and exposes latest metrics/incidents.
 - Deterministic congestion prediction that works without a model/API key.
 - `ShepherdAgent` tool-routing layer that chooses operational tools and returns a visible `usedTools` chain.
-- FastAPI routes for health, chat, report, and live metric ingest.
-- Pytest coverage for datastore, prediction, agent routing, and API routes.
+- Autonomous `AgentMonitor` that checks congestion risk and writes proactive alerts.
+- FastAPI routes for health, chat, report, live metric ingest, monitor run, and alerts.
+- Pytest coverage for datastore, prediction, agent routing, autonomous monitor, and API routes.
 
 ## Quick local check
 
@@ -51,6 +52,15 @@ Agent tool flow:
 natural-language question -> ShepherdAgent -> selected tools -> operational answer + usedTools trace
 ```
 
+Autonomous monitor env:
+
+```text
+AGENT_MONITOR_ENABLED=true
+AGENT_MONITOR_INTERVAL_SECONDS=5
+```
+
+The monitor also runs immediately after metric ingest, so live tracking can create alerts without waiting for the next interval.
+
 Main local endpoints:
 
 ```text
@@ -58,6 +68,8 @@ GET  /agent/health
 POST /agent/chat
 GET  /agent/report
 POST /agent/ingest/metrics
+GET  /agent/alerts
+POST /agent/monitor/run
 ```
 
 ## Data layout
@@ -66,7 +78,8 @@ POST /agent/ingest/metrics
 services/agent/demo_data/zones.json       # tracked zone config seed
 services/agent/demo_data/metrics.json     # tracked metric history seed
 services/agent/demo_data/incidents.json   # tracked incident seed
-services/agent/runtime_data/metrics.jsonl # local live metrics, ignored by git
+services/agent/runtime_data/metrics.jsonl       # local live metrics, ignored by git
+services/agent/runtime_data/agent_alerts.jsonl  # proactive agent alerts, ignored by git
 ```
 
 `runtime_data/metrics.jsonl` is intentionally not committed. The frontend/processor ingest API will append live local metrics there in the next step.

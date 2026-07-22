@@ -50,6 +50,20 @@ class Prediction(CamelModel):
     recommendation: str
 
 
+class AgentAlert(CamelModel):
+    alert_id: str = Field(alias="alertId")
+    zone_id: str = Field(alias="zoneId")
+    zone_name: str = Field(alias="zoneName")
+    status: Literal["open", "acknowledged", "resolved"] = "open"
+    severity: Literal["medium", "high"] = "high"
+    created_at: datetime = Field(alias="createdAt")
+    eta_seconds: int | None = Field(default=None, alias="etaSeconds")
+    reason: str
+    recommendation: str
+    used_tools: list[str] = Field(default_factory=list, alias="usedTools")
+    source: str = "agent-monitor"
+
+
 class AgentChatRequest(CamelModel):
     message: str
     session_id: str = Field(default="local-demo", alias="sessionId")

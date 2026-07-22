@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent import ShepherdAgent
 from app.data_store import LocalDataStore
+from app.monitor import AgentMonitor
 from app.schemas import AgentChatRequest, AgentChatResponse, Metric
 
 
@@ -33,6 +36,21 @@ def _cors_origins() -> list[str]:
     return ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
+def _monitor_interval_seconds() -> float:
+    configured = os.getenv("AGENT_MONITOR_INTERVAL_SECONDS", "5")
+    try:
+        return max(1.0, float(configured))
+    except ValueError:
+        return 5.0
+
+
+def _monitor_enabled(default: bool = True) -> bool:
+    configured = os.getenv("AGENT_MONITOR_ENABLED")
+    if configured is None:
+        return default
+    return configured.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _normalize_ingest_payload(payload: Any) -> list[dict]:
     if isinstance(payload, list):
         return payload
@@ -47,10 +65,38 @@ def _normalize_ingest_payload(payload: Any) -> list[dict]:
 
 
 
-def create_app(data_dir: Path | None = None, runtime_dir: Path | None = None) -> FastAPI:
+def create_app(data_dir: Path | None = None, runtime_dir: Path | None = None, enable_monitor: bool | None = None) -> FastAPI:
     store = LocalDataStore(data_dir or _default_data_dir(), runtime_dir or _default_runtime_dir())
     agent = ShepherdAgent(store)
-    app = FastAPI(title="SHEPHERD Local Operations Agent", version="0.1.0")
+    monitor = AgentMonitor(store)
+    should_monitor = _monitor_enabled() if enable_monitor is None else enable_monitor
+    monitor_task: asyncio.Task[None] | None = None
+
+    async def monitor_loop() -> None:
+        while True:
+            try:
+                monitor.run_once()
+            except Exception:
+                # Demo safety: autonomous monitoring must not crash the API.
+                pass
+            await asyncio.sleep(_monitor_interval_seconds())
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        nonlocal monitor_task
+        if should_monitor:
+            monitor_task = asyncio.create_task(monitor_loop())
+        try:
+            yield
+        finally:
+            if monitor_task:
+                monitor_task.cancel()
+                try:
+                    await monitor_task
+                except asyncio.CancelledError:
+                    pass
+
+    app = FastAPI(title="SHEPHERD Local Operations Agent", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_origins(),
@@ -66,13 +112,31 @@ def create_app(data_dir: Path | None = None, runtime_dir: Path | None = None) ->
             "service": "shepherd-local-agent",
             "dataMode": "local-json",
             "zones": len(store.get_zones()),
+            "monitorEnabled": should_monitor,
+            "monitorIntervalSeconds": _monitor_interval_seconds(),
+            "openAgentAlerts": len(store.list_agent_alerts(status="open")),
         }
 
     @app.post("/agent/ingest/metrics")
     def ingest_metrics(payload: Any = Body(...)) -> dict[str, Any]:
         metrics = [Metric.model_validate(item) for item in _normalize_ingest_payload(payload)]
         written = store.append_metrics(metrics)
-        return {"ok": True, "count": written}
+        alert = monitor.run_once()
+        return {
+            "ok": True,
+            "count": written,
+            "alert": alert.model_dump(by_alias=True, mode="json") if alert else None,
+        }
+
+    @app.get("/agent/alerts")
+    def agent_alerts(status: str | None = None, limit: int = 20) -> dict[str, Any]:
+        alerts = store.list_agent_alerts(status=status, limit=limit)
+        return {"ok": True, "alerts": [item.model_dump(by_alias=True, mode="json") for item in alerts]}
+
+    @app.post("/agent/monitor/run")
+    def run_monitor_once() -> dict[str, Any]:
+        alert = monitor.run_once()
+        return {"ok": True, "alert": alert.model_dump(by_alias=True, mode="json") if alert else None}
 
     @app.post("/agent/chat", response_model=AgentChatResponse)
     def chat(request: AgentChatRequest) -> AgentChatResponse:
