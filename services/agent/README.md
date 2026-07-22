@@ -9,8 +9,9 @@ Current implemented layer:
 - Pydantic schemas for zones, metrics, incidents, predictions, and chat responses.
 - `LocalDataStore` that reads seed data, merges runtime metrics, and exposes latest metrics/incidents.
 - Deterministic congestion prediction that works without a model/API key.
+- `ShepherdAgent` tool-routing layer that chooses operational tools and returns a visible `usedTools` chain.
 - FastAPI routes for health, chat, report, and live metric ingest.
-- Pytest coverage for datastore, prediction, and API routes.
+- Pytest coverage for datastore, prediction, agent routing, and API routes.
 
 ## Quick local check
 
@@ -42,6 +43,12 @@ Smoke test:
 ```powershell
 Invoke-RestMethod http://localhost:8100/agent/health
 Invoke-RestMethod http://localhost:8100/agent/chat -Method Post -ContentType 'application/json' -Body '{"message":"Booth nào sẽ tắc trong 2 phút tới?"}'
+```
+
+Agent tool flow:
+
+```text
+natural-language question -> ShepherdAgent -> selected tools -> operational answer + usedTools trace
 ```
 
 Main local endpoints:

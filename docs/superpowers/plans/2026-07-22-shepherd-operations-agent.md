@@ -1,6 +1,6 @@
 # SHEPHERD Operations Agent Implementation Plan
 
-Implementation progress: Task 1 scaffold complete; Task 2 seeded/local runtime data complete; Task 3 datastore complete; Task 4 prediction complete; Task 6/6b local API + ingest backend complete; Task 8 frontend copilot complete. Last updated: 2026-07-22 21:57:34 +0700
+Implementation progress: Task 1 scaffold complete; Task 2 seeded/local runtime data complete; Task 3 datastore complete; Task 4 prediction complete; Task 5 agent tool-routing complete; Task 6/6b local API + ingest backend complete; Task 8 frontend copilot complete. Last updated: 2026-07-22 22:02:53 +0700
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -330,7 +330,9 @@ cd services\agent
 
 ## Task 5: Agent tools and deterministic fallback
 
-- [ ] Create `services/agent/app/tools.py`.
+**Progress:** Complete on 2026-07-22 22:02:53 +0700. `/agent/chat` now goes through `ShepherdAgent`, which selects tools and returns a visible `usedTools` chain.
+
+- [x] Create `services/agent/app/tools.py`.
 
 Tools:
 
@@ -343,7 +345,7 @@ recommend_staff_action()
 generate_shift_report()
 ```
 
-- [ ] Create `services/agent/app/agent.py`.
+- [x] Create `services/agent/app/agent.py`.
 
 Class:
 
@@ -361,24 +363,30 @@ report: contains "report", "tổng kết", "ca", "shift"
 copilot: default
 ```
 
-Important: deterministic response must work without `OPENAI_API_KEY`.
+Important: deterministic response works without `OPENAI_API_KEY`.
 
-- [ ] Create `services/agent/tests/test_agent.py`:
+- [x] Create `services/agent/tests/test_agent.py`:
   - prediction question uses `predict_congestion`
+  - prediction question uses `recommend_staff_action`
   - report question uses `generate_shift_report`
   - copilot question returns busiest zone
+  - explicit mode overrides message intent
 
-- [ ] Verify:
+- [x] Refactor `services/agent/app/main.py`:
+  - `POST /agent/chat` calls `ShepherdAgent.chat(...)`
+  - `GET /agent/report` calls `ShepherdAgent.chat(..., mode="report")`
+
+- [x] Verify:
 
 ```powershell
-pytest tests/test_agent.py -v
+cd services\agent
+.\.venv\Scripts\python.exe -m pytest tests -v
 ```
 
-- [ ] Commit:
+Smoke verified:
 
 ```powershell
-git add services/agent/app/tools.py services/agent/app/agent.py services/agent/tests/test_agent.py
-git commit -m "feat: add operations agent tools"
+Invoke-RestMethod http://127.0.0.1:8100/agent/report
 ```
 
 ---
