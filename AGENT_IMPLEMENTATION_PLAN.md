@@ -1,8 +1,9 @@
 # Agent Implementation Progress
 
-Last updated: 2026-07-22 21:03:41 +07:00
+Last updated: 2026-07-22 21:29:31 +0700
 
 Current status:
+- [x] Task 2 updated: seeded fallback plus live local ingest requirement added.
 - [x] Task 1 verification: venv install completed; import smoke passed.
 - [x] Plan copied to repo root for teammate agents.
 - [x] Task 1 scaffold complete.
@@ -79,6 +80,56 @@ Response:
 }
 ```
 
+
+### Local live ingest contract
+
+The agent must support both stable seeded data and live local data from the running demo.
+
+`POST http://localhost:8100/agent/ingest/metrics`
+
+Request accepts either a single metric, an array, or `{ "metrics": [...] }`:
+
+```json
+{
+  "metrics": [
+    {
+      "zoneId": "booth-2",
+      "timestamp": "2026-07-22T14:02:00+07:00",
+      "personCount": 6,
+      "queueLength": 6,
+      "waitSec": 112,
+      "status": "warning",
+      "source": "local-frontend"
+    }
+  ]
+}
+```
+
+Response:
+
+```json
+{ "ok": true, "count": 1 }
+```
+
+Storage:
+
+```text
+services/agent/runtime_data/metrics.jsonl
+```
+
+Data priority:
+
+```text
+runtime_data/metrics.jsonl if present
++ demo_data/metrics.json as fallback/seed
+```
+
+Demo reliability rule:
+
+```text
+If live ingest is empty or broken, prediction still works from seeded demo_data.
+```
+
 ---
 
 ## Files
@@ -97,6 +148,7 @@ Create:
 - `services/agent/demo_data/zones.json`
 - `services/agent/demo_data/metrics.json`
 - `services/agent/demo_data/incidents.json`
+- `services/agent/runtime_data/metrics.jsonl` — runtime local metric history written by `/agent/ingest/metrics`; ignored by git except `.gitkeep`.
 - `services/agent/tests/test_data_store.py`
 - `services/agent/tests/test_prediction.py`
 - `services/agent/tests/test_agent.py`
@@ -172,7 +224,7 @@ git commit -m "feat: scaffold local operations agent"
 
 ---
 
-## Task 2: Add demo data
+## Task 2: Add seeded demo data and local live ingest
 
 - [ ] Create `services/agent/demo_data/zones.json` with 3 zones:
   - `booth-1`, warn `4`, congest `7`
@@ -187,6 +239,16 @@ git commit -m "feat: scaffold local operations agent"
 - [ ] Create `services/agent/demo_data/incidents.json`:
   - one open incident on `booth-2`
   - one resolved incident on `entrance`
+
+- [ ] Create `services/agent/runtime_data/.gitkeep` so runtime local metric history has a stable folder. Do not commit `metrics.jsonl`.
+
+- [ ] Update `.gitignore` for agent runtime data:
+
+```gitignore
+services/agent/.venv/
+services/agent/runtime_data/*.jsonl
+!services/agent/runtime_data/.gitkeep
+```
 
 - [ ] Validate:
 
@@ -382,6 +444,59 @@ Invoke-RestMethod http://localhost:8100/agent/chat -Method Post -ContentType 'ap
 ```powershell
 git add services/agent/app/main.py services/agent/tests/test_api.py
 git commit -m "feat: expose local operations agent api"
+```
+
+
+---
+
+## Task 6b: Local live metric ingest API
+
+This task connects the live local demo to the agent memory while preserving seeded fallback data.
+
+- [ ] Modify `services/agent/app/data_store.py`:
+  - create `append_metrics(metrics: list[Metric]) -> int`
+  - write each metric as one JSON line to `services/agent/runtime_data/metrics.jsonl`
+  - update `get_metric_history()` to read seeded `demo_data/metrics.json` plus runtime JSONL
+  - sort combined metrics by timestamp
+
+- [ ] Modify `services/agent/app/main.py`:
+  - add `POST /agent/ingest/metrics`
+  - accept single metric, array, or `{ "metrics": [...] }`
+  - return `{ "ok": true, "count": written }`
+
+- [ ] Add tests in `services/agent/tests/test_ingest.py`:
+  - ingest single metric
+  - ingest `{ metrics: [...] }`
+  - history includes runtime metric plus seeded metrics
+
+- [ ] Optional frontend integration:
+  - add `VITE_AGENT_INGEST_URL=http://localhost:8100/agent/ingest/metrics`
+  - after local tracking metrics update, POST zone metrics to agent ingest
+  - failures must be non-blocking; UI/AI must keep running
+
+- [ ] Verify:
+
+```powershell
+cd services\agent
+.\.venv\Scripts\Activate.ps1
+pytest tests -v
+uvicorn app.main:app --host 0.0.0.0 --port 8100
+```
+
+Smoke:
+
+```powershell
+Invoke-RestMethod http://localhost:8100/agent/ingest/metrics -Method Post -ContentType 'application/json' -Body '{"zoneId":"booth-2","timestamp":"2026-07-22T14:02:00+07:00","personCount":8,"queueLength":8,"waitSec":140,"status":"congested"}'
+Invoke-RestMethod http://localhost:8100/agent/chat -Method Post -ContentType 'application/json' -Body '{"message":"Booth nào đang tắc?"}'
+```
+
+Expected: answer reflects the ingested high `booth-2` count.
+
+- [ ] Commit:
+
+```powershell
+git add services/agent AGENT_IMPLEMENTATION_PLAN.md docs/superpowers/plans/2026-07-22-shepherd-operations-agent.md .gitignore
+git commit -m "feat: add local agent metric ingest"
 ```
 
 ---

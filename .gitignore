@@ -54,3 +54,8 @@ crash.*.log
 Thumbs.db
 .idea/
 .vscode/
+
+# Local SHEPHERD agent runtime
+services/agent/.venv/
+services/agent/runtime_data/*.jsonl
+!services/agent/runtime_data/.gitkeep
