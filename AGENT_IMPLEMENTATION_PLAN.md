@@ -1,9 +1,10 @@
 # Agent Implementation Progress
 
-Last updated: 2026-07-22 21:29:31 +0700
+Last updated: 2026-07-22 21:40:33 +0700
 
 Current status:
-- [x] Task 2 updated: seeded fallback plus live local ingest requirement added.
+- [x] Task 3 complete: local schemas/data store/test coverage/check script/README added.
+- [x] Task 2 complete: seeded fallback data and runtime JSONL folder added.
 - [x] Task 1 verification: venv install completed; import smoke passed.
 - [x] Plan copied to repo root for teammate agents.
 - [x] Task 1 scaffold complete.
@@ -226,23 +227,25 @@ git commit -m "feat: scaffold local operations agent"
 
 ## Task 2: Add seeded demo data and local live ingest
 
-- [ ] Create `services/agent/demo_data/zones.json` with 3 zones:
+**Progress:** Complete on 2026-07-22 21:40:33 +0700. Seed JSON, runtime folder, and gitignore rules are in place.
+
+- [x] Create `services/agent/demo_data/zones.json` with 3 zones:
   - `booth-1`, warn `4`, congest `7`
   - `booth-2`, warn `4`, congest `7`
   - `entrance`, warn `8`, congest `12`
 
-- [ ] Create `services/agent/demo_data/metrics.json` with a clear trend:
+- [x] Create `services/agent/demo_data/metrics.json` with a clear trend:
   - `booth-2` grows from `4 -> 5 -> 6` over 3 minutes.
   - `booth-1` grows slowly.
   - `entrance` is busy but stable.
 
-- [ ] Create `services/agent/demo_data/incidents.json`:
+- [x] Create `services/agent/demo_data/incidents.json`:
   - one open incident on `booth-2`
   - one resolved incident on `entrance`
 
-- [ ] Create `services/agent/runtime_data/.gitkeep` so runtime local metric history has a stable folder. Do not commit `metrics.jsonl`.
+- [x] Create `services/agent/runtime_data/.gitkeep` so runtime local metric history has a stable folder. Do not commit `metrics.jsonl`.
 
-- [ ] Update `.gitignore` for agent runtime data:
+- [x] Update `.gitignore` for agent runtime data:
 
 ```gitignore
 services/agent/.venv/
@@ -250,7 +253,7 @@ services/agent/runtime_data/*.jsonl
 !services/agent/runtime_data/.gitkeep
 ```
 
-- [ ] Validate:
+- [x] Validate:
 
 ```powershell
 python -m json.tool services\agent\demo_data\zones.json > $null
@@ -258,18 +261,13 @@ python -m json.tool services\agent\demo_data\metrics.json > $null
 python -m json.tool services\agent\demo_data\incidents.json > $null
 ```
 
-- [ ] Commit:
-
-```powershell
-git add services/agent/demo_data
-git commit -m "test: seed operations agent demo data"
-```
-
 ---
 
 ## Task 3: Data models and local data store
 
-- [ ] Create `services/agent/app/schemas.py` with Pydantic models:
+**Progress:** Complete on 2026-07-22 21:40:33 +0700. Local datastore has tests plus an easy local smoke runner.
+
+- [x] Create `services/agent/app/schemas.py` with Pydantic models:
   - `Zone`
   - `Metric`
   - `Incident`
@@ -277,30 +275,28 @@ git commit -m "test: seed operations agent demo data"
   - `AgentChatRequest`
   - `AgentChatResponse`
 
-- [ ] Create `services/agent/app/data_store.py` with `LocalDataStore`:
+- [x] Create `services/agent/app/data_store.py` with `LocalDataStore`:
   - `get_zones()`
   - `get_metric_history(zone_id=None, minutes=10)`
   - `get_latest_metrics()`
   - `list_open_incidents()`
   - `list_incidents()`
+  - `append_metrics(metrics)`
 
-- [ ] Create `services/agent/tests/test_data_store.py`:
+- [x] Create `services/agent/tests/test_data_store.py`:
   - latest metrics returns one item per zone
   - booth-2 history returns 3 points
   - open incidents returns only `inc-001`
+  - runtime append writes JSONL and affects latest metrics
 
-- [ ] Verify:
+- [x] Add `services/agent/check-local.ps1` and `services/agent/README.md` so teammates can run the local datastore easily.
+
+- [x] Verify:
 
 ```powershell
 cd services\agent
-pytest tests/test_data_store.py -v
-```
-
-- [ ] Commit:
-
-```powershell
-git add services/agent/app/schemas.py services/agent/app/data_store.py services/agent/tests/test_data_store.py
-git commit -m "feat: add local operations data store"
+.\.venv\Scripts\python.exe -m pytest tests/test_data_store.py -v
+.\check-local.ps1 -SkipTests
 ```
 
 ---

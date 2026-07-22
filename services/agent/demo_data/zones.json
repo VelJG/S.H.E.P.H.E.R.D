@@ -1,0 +1,5 @@
+[
+  { "zoneId": "booth-1", "zoneName": "Registration Booth", "warnAt": 4, "congestAt": 7, "avgServiceSec": 18 },
+  { "zoneId": "booth-2", "zoneName": "AI Demo Booth", "warnAt": 4, "congestAt": 7, "avgServiceSec": 25 },
+  { "zoneId": "entrance", "zoneName": "Main Entrance", "warnAt": 8, "congestAt": 12, "avgServiceSec": 10 }
+]

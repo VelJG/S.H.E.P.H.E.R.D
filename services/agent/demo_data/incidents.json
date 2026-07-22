@@ -1,0 +1,23 @@
+[
+  {
+    "incidentId": "inc-001",
+    "zoneId": "booth-2",
+    "zoneName": "AI Demo Booth",
+    "status": "open",
+    "severity": "medium",
+    "createdAt": "2026-07-22T13:56:30+07:00",
+    "title": "Queue growth warning",
+    "summary": "AI Demo Booth queue is growing faster than service rate."
+  },
+  {
+    "incidentId": "inc-002",
+    "zoneId": "entrance",
+    "zoneName": "Main Entrance",
+    "status": "resolved",
+    "severity": "low",
+    "createdAt": "2026-07-22T13:42:00+07:00",
+    "resolvedAt": "2026-07-22T13:49:00+07:00",
+    "title": "Entrance crowd warning",
+    "summary": "Short crowd spike at entrance resolved after redirect."
+  }
+]
