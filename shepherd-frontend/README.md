@@ -15,7 +15,10 @@ deploy). Runs on mock/simulated tracking so it demos without a backend.
 - **Live Monitor** — Spot.ai-style dashboard: camera feed with zone overlays and
   tracked people, metric tiles, an activity chart, a per-zone status list, and an
   incident feed. When a zone stays congested for a few ticks, an incident +
-  response task workflow fires.
+  response task workflow fires. It also posts latest local zone metrics to the
+  local agent ingest endpoint.
+- **Agent Copilot** — asks the local operations agent natural-language questions,
+  shows the answer, prediction cards, used tool chain, and latest metrics memory.
 
 ## Run
 
@@ -24,6 +27,25 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # -> dist/  (upload to the aabw-shepherd-frontend S3 bucket + CloudFront)
 ```
+
+## Local Agentic AI wiring
+
+Start the local agent first:
+
+```powershell
+cd ..\services\agent
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8100
+```
+
+Frontend defaults to `VITE_AGENT_URL=http://localhost:8100`. If needed, create
+`shepherd-frontend/.env`:
+
+```text
+VITE_AGENT_URL=http://localhost:8100
+VITE_AGENT_INGEST_URL=http://localhost:8100/agent/ingest/metrics
+```
+
+Then open the **Agent Copilot** tab and ask: `Booth nào sẽ tắc trong 2 phút tới?`.
 
 ## Wiring to the real backend later
 

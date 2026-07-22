@@ -5,8 +5,9 @@ import { loadZones, saveZones } from './lib/storage';
 import LiveMonitor from './components/LiveMonitor';
 import ZoneEditor from './components/ZoneEditor';
 import UploadVideo from './components/UploadVideo';
+import AgentCopilot from './components/AgentCopilot';
 
-type Tab = 'live' | 'zones' | 'upload';
+type Tab = 'live' | 'zones' | 'upload' | 'agent';
 
 const RELAY_STREAM_KEY = 'shepherd.live.relay.streamUrl';
 const RELAY_SNAPSHOT_KEY = 'shepherd.live.relay.snapshotUrl';
@@ -103,6 +104,9 @@ export default function App() {
           <button className={`navtab ${tab === 'upload' ? 'navtab--on' : ''}`} onClick={() => setTab('upload')}>
             Upload Video
           </button>
+          <button className={`navtab ${tab === 'agent' ? 'navtab--on' : ''}`} onClick={() => setTab('agent')}>
+            Agent Copilot
+          </button>
         </nav>
 
         <div className="topbar__right">
@@ -132,8 +136,10 @@ export default function App() {
             liveSnapshotUrl={liveSource.snapshotUrl}
             onUseLiveFrame={useLiveFrameForZones}
           />
-        ) : (
+        ) : tab === 'upload' ? (
           <UploadVideo />
+        ) : (
+          <AgentCopilot />
         )}
       </main>
     </div>

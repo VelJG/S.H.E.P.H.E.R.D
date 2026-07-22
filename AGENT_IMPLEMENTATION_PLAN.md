@@ -1,8 +1,9 @@
 # Agent Implementation Progress
 
-Last updated: 2026-07-22 21:51:44 +0700
+Last updated: 2026-07-22 21:57:34 +0700
 
 Current status:
+- [x] Task 8 complete: frontend Agent Copilot tab wired to local agent and build verified.
 - [x] Task 6/6b backend complete: local FastAPI health/chat/report/ingest routes verified.
 - [x] Task 4 complete: deterministic congestion prediction engine verified.
 - [x] Task 3 complete: local schemas/data store/test coverage/check script/README added.
@@ -524,12 +525,15 @@ git commit -m "feat: add optional strands openai agent rewrite"
 
 ## Task 8: Frontend Agent Copilot tab
 
-- [ ] Create `shepherd-frontend/src/lib/agentClient.ts`.
+**Progress:** Complete on 2026-07-22 21:57:34 +0700. The frontend has an Agent Copilot tab and live metrics are posted to the local agent ingest endpoint without blocking vision.
+
+- [x] Create `shepherd-frontend/src/lib/agentClient.ts`.
 
 Exports:
 
 ```ts
-askAgent(message: string): Promise<AgentResponse>
+askAgent(message: string): Promise<AgentChatResponse>
+ingestAgentMetrics(metrics): Promise<void>
 ```
 
 Default URL:
@@ -538,20 +542,21 @@ Default URL:
 VITE_AGENT_URL || http://localhost:8100
 ```
 
-- [ ] Create `shepherd-frontend/src/components/AgentCopilot.tsx`.
+- [x] Create `shepherd-frontend/src/components/AgentCopilot.tsx`.
 
 UI:
-  - Hero: “Agentic AI Operations Copilot”
+  - Hero: “Operations Copilot”
   - Quick buttons:
     - `Booth nào đông nhất?`
     - `Booth nào sẽ tắc trong 2 phút tới?`
     - `Tóm tắt 10 phút qua`
-    - `Tạo shift report`
+    - `Nên gửi staff đi đâu?`
   - Answer panel
   - Used tools chain
   - Prediction cards
+  - Latest metrics memory
 
-- [ ] Modify `shepherd-frontend/src/App.tsx`.
+- [x] Modify `shepherd-frontend/src/App.tsx`.
 
 Add tab:
 
@@ -559,35 +564,29 @@ Add tab:
 Agent Copilot
 ```
 
-- [ ] Modify `shepherd-frontend/src/index.css`.
+- [x] Modify `shepherd-frontend/src/lib/useLiveData.ts`.
+  - posts latest zone metrics to `POST /agent/ingest/metrics`
+  - failures are swallowed so local vision continues
+
+- [x] Modify `shepherd-frontend/src/index.css`.
 
 Add styles:
 
 ```text
 .agent-page
-.agent-main
-.agent-chat
+.agent-hero
+.agent-card
 .agent-answer
 .agent-tools
-.agent-pred
-.agent-pred--high
-.agent-pred--medium
-.agent-pred--low
+.agent-prediction
+.agent-metrics
 ```
 
-- [ ] Verify:
+- [x] Verify:
 
 ```powershell
 cd shepherd-frontend
-$env:VITE_AGENT_URL="http://localhost:8100"
 npm run build
-```
-
-- [ ] Commit:
-
-```powershell
-git add shepherd-frontend/src/lib/agentClient.ts shepherd-frontend/src/components/AgentCopilot.tsx shepherd-frontend/src/App.tsx shepherd-frontend/src/index.css
-git commit -m "feat: add agent copilot dashboard tab"
 ```
 
 ---

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { Frame, Incident, Track, Zone, ZoneMetric, ZoneStatus } from '../types';
 import { TemporalHeatmap } from './temporalHeatmap';
+import { AGENT_URL, ingestAgentMetrics, type AgentMetricPayload } from './agentClient';
 
 const env = (import.meta as any).env ?? {};
 const API_URL = env.VITE_API_URL || '';
@@ -14,6 +15,7 @@ const YOLO_URL = env.VITE_YOLO_URL
 const TRACK_URL = env.VITE_TRACKER_URL
   || (API_URL ? `${API_URL}/demo/track` : env.VITE_TRACKER_TARGET ? endpoint(env.VITE_TRACKER_TARGET, '/track') : '/api/tracker/track');
 const RESET_URL = TRACK_URL.replace(/\/track\/?$/, '/reset');
+const AGENT_INGEST_URL = env.VITE_AGENT_INGEST_URL || `${AGENT_URL}/agent/ingest/metrics`;
 const HISTORY_LEN = 28;
 
 const num = (value: unknown) => {
@@ -198,6 +200,23 @@ export function useLiveData(
         }
         return next;
       });
+      if (AGENT_INGEST_URL) {
+        const now = new Date().toISOString();
+        const payload: AgentMetricPayload[] = Object.values(nextMetrics).map((metric) => ({
+          zoneId: metric.zoneId,
+          timestamp: now,
+          personCount: metric.personCount,
+          queueLength: metric.personCount,
+          waitSec: metric.waitSec,
+          status: metric.status,
+          source: 'frontend-live',
+          congestionScore: metric.heatMean ?? 0,
+        }));
+        void ingestAgentMetrics(payload, AGENT_INGEST_URL).catch(() => {
+          /* agent memory ingest is demo-helpful but must never block vision */
+        });
+      }
+
       setTracks(nextTracks);
       setMetrics(nextMetrics);
       setHistory((previous) => [...previous, { total }].slice(-HISTORY_LEN));
