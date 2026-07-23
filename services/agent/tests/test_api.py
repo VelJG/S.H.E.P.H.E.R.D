@@ -9,6 +9,7 @@ def client(tmp_path: Path) -> TestClient:
     app = create_app(
         data_dir=Path(__file__).parents[1] / "demo_data",
         runtime_dir=tmp_path / "runtime_data",
+        enable_ai=False,
     )
     return TestClient(app)
 

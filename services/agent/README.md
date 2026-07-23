@@ -10,6 +10,7 @@ Current implemented layer:
 - `LocalDataStore` that reads seed data, merges runtime metrics, and exposes latest metrics/incidents.
 - Deterministic congestion prediction that works without a model/API key.
 - `ShepherdAgent` tool-routing layer that chooses operational tools and returns a visible `usedTools` chain.
+- Optional OpenAI LLM synthesis for real AI answers when `OPENAI_API_KEY` is set.
 - Autonomous `AgentMonitor` that checks congestion risk and writes proactive alerts.
 - FastAPI routes for health, chat, report, live metric ingest, monitor run, and alerts.
 - Pytest coverage for datastore, prediction, agent routing, autonomous monitor, and API routes.
@@ -31,6 +32,25 @@ cd services\agent
 ```
 
 The script runs tests and prints a datastore smoke summary.
+
+## Enable real AI answers
+
+Create `services/agent/.env` from `.env.example` and set:
+
+```env
+AGENT_AI_ENABLED=true
+AGENT_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+Behavior:
+
+```text
+operator question -> ShepherdAgent chooses tools -> tool JSON -> OpenAI rewrites/reasons -> answer
+```
+
+If the key is missing or the model call fails, the deterministic fallback still answers so the demo survives.
 
 ## Start the local agent API
 
@@ -55,6 +75,10 @@ natural-language question -> ShepherdAgent -> selected tools -> operational answ
 Autonomous monitor env:
 
 ```text
+AGENT_AI_ENABLED=true
+AGENT_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+OPENAI_MODEL=gpt-4.1-mini
 AGENT_MONITOR_ENABLED=true
 AGENT_MONITOR_INTERVAL_SECONDS=5
 ```

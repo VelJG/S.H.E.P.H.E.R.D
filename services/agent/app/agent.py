@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+
 from app.data_store import LocalDataStore
+from app.llm import AgentModelClient
 from app.schemas import AgentChatResponse
 from app.tools import ShepherdTools
 
@@ -13,8 +16,9 @@ class ShepherdAgent:
     works without OPENAI_API_KEY so the demo remains reliable.
     """
 
-    def __init__(self, store: LocalDataStore):
+    def __init__(self, store: LocalDataStore, model_client: AgentModelClient | None = None):
         self.tools = ShepherdTools(store)
+        self.model_client = model_client
 
     def chat(self, message: str, mode: str = "auto") -> AgentChatResponse:
         intent = self._detect_intent(message, mode)
@@ -48,7 +52,7 @@ class ShepherdAgent:
         else:
             answer = f"No zone is critical yet. Top watch zone: {top.zone_name} ({top.zone_id}). {recommendation}"
 
-        return AgentChatResponse(
+        response = AgentChatResponse(
             answer=answer,
             intent="predict",
             usedTools=["predict_congestion", "get_metric_history", "recommend_staff_action"],
@@ -59,11 +63,12 @@ class ShepherdAgent:
                 "latestMetrics": self.tools.latest_metrics_metadata(),
             },
         )
+        return self._synthesize_with_ai(message, response)
 
     def _report(self, message: str) -> AgentChatResponse:
         report = self.tools.generate_shift_report()
         predictions = self.tools.predict_congestion(minutes=10)
-        return AgentChatResponse(
+        response = AgentChatResponse(
             answer=report["summary"],
             intent="report",
             usedTools=["generate_shift_report", "get_latest_metrics", "list_open_incidents", "predict_congestion"],
@@ -75,6 +80,7 @@ class ShepherdAgent:
                 **report,
             },
         )
+        return self._synthesize_with_ai(message, response)
 
     def _copilot(self, message: str) -> AgentChatResponse:
         latest = self.tools.get_latest_metrics()
@@ -89,7 +95,7 @@ class ShepherdAgent:
         else:
             answer = "No local metric data is available yet."
 
-        return AgentChatResponse(
+        response = AgentChatResponse(
             answer=answer,
             intent="copilot",
             usedTools=["get_latest_metrics", "list_open_incidents"],
@@ -101,3 +107,40 @@ class ShepherdAgent:
                 "openIncidents": len(open_incidents),
             },
         )
+        return self._synthesize_with_ai(message, response)
+
+
+    def _synthesize_with_ai(self, message: str, response: AgentChatResponse) -> AgentChatResponse:
+        if self.model_client is None:
+            response.metadata["aiUsed"] = False
+            response.metadata["aiProvider"] = "deterministic-fallback"
+            return response
+
+        system_prompt = (
+            "You are SHEPHERD, an agentic AI venue-operations copilot. "
+            "You receive tool outputs from live venue metrics, predictions, incidents, and reports. "
+            "Answer like an operations dispatcher: concise, decisive, and action-oriented. "
+            "Do not invent zones or numbers not present in the tool context. "
+            "If risk is high, state where to send staff and why."
+        )
+        context = response.model_dump(by_alias=True, mode="json")
+        user_prompt = (
+            f"Operator question: {message}\n\n"
+            "Tool result JSON:\n"
+            f"{json.dumps(context, ensure_ascii=False, indent=2)}\n\n"
+            "Rewrite the answer using the tool results. Keep it under 90 words."
+        )
+        try:
+            answer = self.model_client.complete(system_prompt, user_prompt)
+            if answer:
+                response.answer = answer
+                response.metadata["aiUsed"] = True
+                response.metadata["aiProvider"] = self.model_client.provider
+                response.metadata["aiModel"] = self.model_client.model
+                return response
+        except Exception as exc:
+            response.metadata["aiError"] = str(exc)
+
+        response.metadata["aiUsed"] = False
+        response.metadata["aiProvider"] = "deterministic-fallback"
+        return response

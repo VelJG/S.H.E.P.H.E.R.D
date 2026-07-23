@@ -27,6 +27,9 @@ export type AgentHealth = {
   monitorEnabled?: boolean;
   monitorIntervalSeconds?: number;
   openAgentAlerts?: number;
+  aiEnabled?: boolean;
+  aiProvider?: string;
+  aiModel?: string | null;
 };
 
 export type AgentAlert = {

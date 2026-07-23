@@ -1,8 +1,9 @@
 # Agent Implementation Progress
 
-Last updated: 2026-07-22 22:25:35 +0700
+Last updated: 2026-07-23 23:06:58 +0700
 
 Current status:
+- [x] Real AI enabled: ShepherdAgent can call OpenAI for LLM answer synthesis with deterministic fallback.
 - [x] Autonomous monitor complete: background checks, proactive alerts, alert API, and frontend alert panel verified.
 - [x] Task 5 complete: ShepherdAgent tool-routing layer added and verified.
 - [x] Task 8 complete: frontend Agent Copilot tab wired to local agent and build verified.

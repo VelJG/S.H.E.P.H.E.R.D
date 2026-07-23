@@ -8,9 +8,13 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parents[1] / ".env")
 
 from app.agent import ShepherdAgent
 from app.data_store import LocalDataStore
+from app.llm import AgentModelClient, OpenAIModelClient
 from app.monitor import AgentMonitor
 from app.schemas import AgentChatRequest, AgentChatResponse, Metric
 
@@ -34,6 +38,13 @@ def _cors_origins() -> list[str]:
     if configured:
         return [item.strip() for item in configured.split(",") if item.strip()]
     return ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def _ai_enabled(default: bool = True) -> bool:
+    configured = os.getenv("AGENT_AI_ENABLED")
+    if configured is None:
+        return default
+    return configured.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _monitor_interval_seconds() -> float:
@@ -65,9 +76,11 @@ def _normalize_ingest_payload(payload: Any) -> list[dict]:
 
 
 
-def create_app(data_dir: Path | None = None, runtime_dir: Path | None = None, enable_monitor: bool | None = None) -> FastAPI:
+def create_app(data_dir: Path | None = None, runtime_dir: Path | None = None, enable_monitor: bool | None = None, enable_ai: bool | None = None, model_client: AgentModelClient | None = None) -> FastAPI:
     store = LocalDataStore(data_dir or _default_data_dir(), runtime_dir or _default_runtime_dir())
-    agent = ShepherdAgent(store)
+    should_ai = _ai_enabled() if enable_ai is None else enable_ai
+    active_model_client = model_client if model_client is not None else (OpenAIModelClient.from_env() if should_ai else None)
+    agent = ShepherdAgent(store, model_client=active_model_client)
     monitor = AgentMonitor(store)
     should_monitor = _monitor_enabled() if enable_monitor is None else enable_monitor
     monitor_task: asyncio.Task[None] | None = None
@@ -115,6 +128,9 @@ def create_app(data_dir: Path | None = None, runtime_dir: Path | None = None, en
             "monitorEnabled": should_monitor,
             "monitorIntervalSeconds": _monitor_interval_seconds(),
             "openAgentAlerts": len(store.list_agent_alerts(status="open")),
+            "aiProvider": active_model_client.provider if active_model_client else "deterministic-fallback",
+            "aiModel": active_model_client.model if active_model_client else None,
+            "aiEnabled": active_model_client is not None,
         }
 
     @app.post("/agent/ingest/metrics")

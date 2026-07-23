@@ -91,7 +91,7 @@ export default function AgentCopilot() {
           <span className="online__dot" />
           <div>
             <strong>{health?.ok ? 'Agent online' : 'Agent offline'}</strong>
-            <small>{health ? `${health.service} · ${health.zones} zones · ${health.openAgentAlerts ?? alerts.length} alerts` : AGENT_URL}</small>
+            <small>{health ? `${health.aiEnabled ? 'AI on' : 'fallback'} · ${health.aiProvider ?? 'unknown'} · ${health.zones} zones · ${health.openAgentAlerts ?? alerts.length} alerts` : AGENT_URL}</small>
           </div>
         </div>
       </section>

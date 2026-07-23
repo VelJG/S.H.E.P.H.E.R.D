@@ -10,6 +10,7 @@ def client(tmp_path: Path) -> TestClient:
         data_dir=Path(__file__).parents[1] / "demo_data",
         runtime_dir=tmp_path / "runtime_data",
         enable_monitor=False,
+        enable_ai=False,
     )
     return TestClient(app)
 
