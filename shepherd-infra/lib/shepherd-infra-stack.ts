@@ -246,6 +246,19 @@ export class ShepherdInfraStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    const agentAlertsTable = new dynamodb.Table(this, 'AgentAlertsTable', {
+      tableName: `${prefix}AgentAlerts`,
+      partitionKey: { name: 'alertId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    agentAlertsTable.addGlobalSecondaryIndex({
+      indexName: 'status-createdAt-index',
+      partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
     // 9. Amazon ECS Fargate scaffold for moving tracking/orchestration off the laptop
     const processingVpc = new ec2.Vpc(this, 'ProcessingVpc', {
       maxAzs: 2,
@@ -296,6 +309,7 @@ export class ShepherdInfraStack extends cdk.Stack {
         INCIDENTS_TABLE: incidentsTable.tableName,
         OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
         CONFIG_ZONES_TABLE: configZonesTable.tableName,
+        AGENT_ALERTS_TABLE: agentAlertsTable.tableName,
         EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
         KINESIS_VIDEO_STREAM_NAME: liveCameraStream.name!,
         KINESIS_VIDEO_STREAM_ARN: liveCameraStream.attrArn,
@@ -326,6 +340,7 @@ export class ShepherdInfraStack extends cdk.Stack {
     incidentsTable.grantReadWriteData(processingTaskDefinition.taskRole);
     operationalTasksTable.grantReadWriteData(processingTaskDefinition.taskRole);
     configZonesTable.grantReadWriteData(processingTaskDefinition.taskRole);
+    agentAlertsTable.grantReadWriteData(processingTaskDefinition.taskRole);
     evidenceBucket.grantReadWrite(processingTaskDefinition.taskRole);
 
     processingTaskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
@@ -357,10 +372,19 @@ export class ShepherdInfraStack extends cdk.Stack {
     incidentsTable.grantReadWriteData(lambdaRole);
     operationalTasksTable.grantReadWriteData(lambdaRole);
     configZonesTable.grantReadWriteData(lambdaRole);
+    agentAlertsTable.grantReadWriteData(lambdaRole);
     evidenceBucket.grantReadWrite(lambdaRole);
     lambdaRole.addToPolicy(new iam.PolicyStatement({
       actions: ['sagemaker:InvokeEndpoint'],
       resources: [`arn:aws:sagemaker:${this.region}:${this.account}:endpoint/${sagemakerEndpointName}`],
+    }));
+
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: [
+        'bedrock:InvokeModel',
+        'bedrock:InvokeModelWithResponseStream',
+      ],
+      resources: [`arn:aws:bedrock:${this.region}::foundation-model/*`],
     }));
 
     const healthLambda = new lambda.Function(this, 'HealthLambda', {
@@ -374,6 +398,7 @@ export class ShepherdInfraStack extends cdk.Stack {
         VENUE_METRICS_TABLE: venueMetricsTable.tableName,
         INCIDENTS_TABLE: incidentsTable.tableName,
         OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
+        AGENT_ALERTS_TABLE: agentAlertsTable.tableName,
         EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
       },
     });
@@ -391,8 +416,11 @@ export class ShepherdInfraStack extends cdk.Stack {
         INCIDENTS_TABLE: incidentsTable.tableName,
         OPERATIONAL_TASKS_TABLE: operationalTasksTable.tableName,
         CONFIG_ZONES_TABLE: configZonesTable.tableName,
+        AGENT_ALERTS_TABLE: agentAlertsTable.tableName,
         EVIDENCE_BUCKET_NAME: evidenceBucket.bucketName,
         SAGEMAKER_ENDPOINT_NAME: sagemakerEndpointName,
+        AGENT_AI_PROVIDER: process.env.AGENT_AI_PROVIDER ?? 'bedrock',
+        BEDROCK_MODEL_ID: process.env.BEDROCK_MODEL_ID ?? 'anthropic.claude-3-haiku-20240307-v1:0',
         DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL ?? '',
       },
     });
@@ -441,6 +469,11 @@ export class ShepherdInfraStack extends cdk.Stack {
     createRoute('GetTasks', 'GET /tasks', appApiIntegration);
     createRoute('GetTaskById', 'GET /tasks/{id}', appApiIntegration);
     createRoute('PatchTaskById', 'PATCH /tasks/{id}', appApiIntegration);
+    createRoute('AgentChat', 'POST /agent/chat', appApiIntegration);
+    createRoute('AgentReport', 'GET /agent/report', appApiIntegration);
+    createRoute('GetAgentAlerts', 'GET /agent/alerts', appApiIntegration);
+    createRoute('RunAgentMonitor', 'POST /agent/monitor/run', appApiIntegration);
+    createRoute('IngestAgentMetrics', 'POST /agent/ingest/metrics', appApiIntegration);
 
     new apigw.CfnStage(this, 'ApiStage', {
       apiId: httpApi.ref,
@@ -542,6 +575,15 @@ export class ShepherdInfraStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'ConfigZonesTableName', {
       value: configZonesTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'AgentAlertsTableName', {
+      value: agentAlertsTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'AgentApiRoutes', {
+      value: 'POST /agent/chat, GET /agent/report, GET /agent/alerts, POST /agent/monitor/run, POST /agent/ingest/metrics',
+      description: 'Agentic AI API routes scaffolded on API Gateway',
     });
 
     new cdk.CfnOutput(this, 'SageMakerRoleArn', {

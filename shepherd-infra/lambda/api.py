@@ -16,14 +16,18 @@ from boto3.dynamodb.conditions import Key
 dynamodb = boto3.resource('dynamodb')
 s3_client = boto3.client('s3')
 sagemaker_runtime = boto3.client('sagemaker-runtime')
+bedrock_runtime = boto3.client('bedrock-runtime')
 
 VENUE_METRICS_TABLE = dynamodb.Table(os.environ['VENUE_METRICS_TABLE'])
 INCIDENTS_TABLE = dynamodb.Table(os.environ['INCIDENTS_TABLE'])
 OPERATIONAL_TASKS_TABLE = dynamodb.Table(os.environ['OPERATIONAL_TASKS_TABLE'])
 CONFIG_ZONES_TABLE = dynamodb.Table(os.environ['CONFIG_ZONES_TABLE'])
+AGENT_ALERTS_TABLE = dynamodb.Table(os.environ['AGENT_ALERTS_TABLE'])
 EVIDENCE_BUCKET_NAME = os.environ['EVIDENCE_BUCKET_NAME']
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL', '').strip()
 SAGEMAKER_ENDPOINT_NAME = os.environ.get('SAGEMAKER_ENDPOINT_NAME', '').strip()
+AGENT_AI_PROVIDER = os.environ.get('AGENT_AI_PROVIDER', 'bedrock').strip().lower()
+BEDROCK_MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0').strip()
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -63,6 +67,16 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return get_task(event)
         if route_key == 'PATCH /tasks/{id}':
             return patch_task(event)
+        if route_key == 'POST /agent/chat':
+            return post_agent_chat(event)
+        if route_key == 'GET /agent/report':
+            return get_agent_report(event)
+        if route_key == 'GET /agent/alerts':
+            return list_agent_alerts(event)
+        if route_key == 'POST /agent/monitor/run':
+            return post_agent_monitor_run(event)
+        if route_key == 'POST /agent/ingest/metrics':
+            return post_agent_ingest_metrics(event)
         return response(404, {'message': f'Route not found: {route_key or f"{method} {raw_path}"}'})
     except ValueError as exc:
         return response(400, {'message': str(exc)})
@@ -658,6 +672,192 @@ def patch_incident(event: dict[str, Any]) -> dict[str, Any]:
     INCIDENTS_TABLE.put_item(Item=to_dynamo_value(updated))
     return response(200, {'message': 'Incident updated', 'item': updated})
 
+
+
+def latest_metrics_items() -> list[dict[str, Any]]:
+    items = scan_all(VENUE_METRICS_TABLE)
+    latest_by_zone: dict[str, dict[str, Any]] = {}
+    for item in items:
+        zone_id = str(item.get('zoneId', ''))
+        current = latest_by_zone.get(zone_id)
+        if current is None or str(item.get('timestamp', '')) > str(current.get('timestamp', '')):
+            latest_by_zone[zone_id] = item
+    return sorted(latest_by_zone.values(), key=lambda item: str(item.get('zoneId', '')))
+
+
+def agent_zone_config() -> list[dict[str, Any]]:
+    item = CONFIG_ZONES_TABLE.get_item(Key={'configId': 'default'}).get('Item', {})
+    zones = item.get('zones') if isinstance(item.get('zones'), list) else []
+    if zones:
+        return zones
+    return [
+        {'id': 'booth-1', 'name': 'Registration Booth', 'warnAt': 4, 'congestAt': 7, 'avgServiceSec': 18},
+        {'id': 'booth-2', 'name': 'AI Demo Booth', 'warnAt': 4, 'congestAt': 7, 'avgServiceSec': 25},
+        {'id': 'entrance', 'name': 'Main Entrance', 'warnAt': 8, 'congestAt': 12, 'avgServiceSec': 10},
+    ]
+
+
+def agent_predictions() -> list[dict[str, Any]]:
+    metrics = {str(item.get('zoneId')): item for item in latest_metrics_items()}
+    predictions = []
+    for zone in agent_zone_config():
+        zone_id = str(zone.get('id', zone.get('zoneId', 'unknown')))
+        metric = metrics.get(zone_id, {})
+        count = int(metric.get('personCount', metric.get('queueLength', 0)) or 0)
+        warn_at = int(zone.get('warnAt', 4) or 4)
+        congest_at = int(zone.get('congestAt', 7) or 7)
+        remaining = max(0, congest_at - count)
+        risk = 'high' if count >= congest_at else 'medium' if count >= warn_at else 'low'
+        eta_seconds = 0 if risk == 'high' else remaining * int(zone.get('avgServiceSec', 20) or 20)
+        zone_name = str(zone.get('name', zone_id))
+        recommendation = (
+            f'Send 1 staff member to {zone_name} now and redirect arrivals to a quieter zone.'
+            if risk == 'high'
+            else f'Keep {zone_name} on watch and prepare staff if the queue keeps growing.'
+            if risk == 'medium'
+            else f'No action needed for {zone_name}; keep normal monitoring.'
+        )
+        predictions.append({
+            'zoneId': zone_id,
+            'zoneName': zone_name,
+            'risk': risk,
+            'etaSeconds': eta_seconds,
+            'reason': f'{zone_name} has {count}/{congest_at} people in the latest AWS metric.',
+            'recommendation': recommendation,
+        })
+    rank = {'high': 0, 'medium': 1, 'low': 2}
+    return sorted(predictions, key=lambda item: (rank.get(item['risk'], 9), item.get('etaSeconds') or 999999, item['zoneId']))
+
+
+def invoke_bedrock_answer(question: str, fallback_answer: str, tool_context: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    if AGENT_AI_PROVIDER != 'bedrock' or not BEDROCK_MODEL_ID:
+        return fallback_answer, {'aiUsed': False, 'aiProvider': 'deterministic-fallback'}
+    body = {
+        'anthropic_version': 'bedrock-2023-05-31',
+        'max_tokens': 420,
+        'temperature': 0.2,
+        'system': 'You are SHEPHERD, an AI venue-operations agent. Use only the provided tool JSON. Be concise and action-oriented.',
+        'messages': [
+            {
+                'role': 'user',
+                'content': (
+                    f'Operator question: {question}\n\n'
+                    f'Tool result JSON:\n{json.dumps(tool_context, default=json_default)}\n\n'
+                    'Write the dispatcher-ready answer under 90 words.'
+                ),
+            },
+        ],
+    }
+    try:
+        result = bedrock_runtime.invoke_model(
+            modelId=BEDROCK_MODEL_ID,
+            contentType='application/json',
+            accept='application/json',
+            body=json.dumps(body).encode('utf-8'),
+        )
+        payload = json.loads(result['body'].read().decode('utf-8'))
+        content = payload.get('content', [])
+        answer = ''.join(part.get('text', '') for part in content if isinstance(part, dict)).strip()
+        if answer:
+            return answer, {'aiUsed': True, 'aiProvider': 'bedrock', 'aiModel': BEDROCK_MODEL_ID}
+    except Exception as exc:
+        print(f'Bedrock agent synthesis failed: {type(exc).__name__}: {exc}')
+        return fallback_answer, {'aiUsed': False, 'aiProvider': 'deterministic-fallback', 'aiError': type(exc).__name__}
+    return fallback_answer, {'aiUsed': False, 'aiProvider': 'deterministic-fallback'}
+
+
+def agent_response(question: str, mode: str = 'auto') -> dict[str, Any]:
+    predictions = agent_predictions()
+    latest = latest_metrics_items()
+    top = predictions[0] if predictions else None
+    normalized = question.lower()
+    intent = mode if mode in ('predict', 'copilot', 'report') else 'report' if any(term in normalized for term in ('report', 'summary', 'tóm tắt', 'shift')) else 'predict' if any(term in normalized for term in ('predict', 'tắc', 'congest', 'staff', 'nghẽn')) else 'copilot'
+    if intent == 'report':
+        fallback_answer = f'Shift summary: {len(latest)} active zones. Top risk: {top["zoneName"] if top else "n/a"}. Recommendation: {top["recommendation"] if top else "keep monitoring"}'
+        used_tools = ['generate_shift_report', 'get_latest_metrics', 'predict_congestion']
+    elif intent == 'predict':
+        fallback_answer = f'{top["zoneName"]} ({top["zoneId"]}) is {top["risk"]} risk. {top["recommendation"]}' if top else 'No metrics available yet.'
+        used_tools = ['predict_congestion', 'get_metric_history', 'recommend_staff_action']
+    else:
+        busiest = max(latest, key=lambda item: int(item.get('personCount', item.get('queueLength', 0)) or 0), default=None)
+        fallback_answer = f'Busiest zone right now is {busiest.get("zoneId")} with {busiest.get("personCount", 0)} people.' if busiest else 'No metrics available yet.'
+        used_tools = ['get_latest_metrics', 'list_open_incidents']
+    context = {'intent': intent, 'usedTools': used_tools, 'predictions': predictions, 'latestMetrics': latest}
+    answer, ai_metadata = invoke_bedrock_answer(question, fallback_answer, context)
+    return {
+        'answer': answer,
+        'intent': intent,
+        'usedTools': used_tools,
+        'predictions': predictions,
+        'metadata': {**context, **ai_metadata},
+    }
+
+
+def post_agent_chat(event: dict[str, Any]) -> dict[str, Any]:
+    payload = decode_body(event)
+    if not isinstance(payload, dict):
+        raise ValueError('Agent chat payload must be an object')
+    return response(200, agent_response(str(payload.get('message', '')), str(payload.get('mode', 'auto'))))
+
+
+def get_agent_report(event: dict[str, Any]) -> dict[str, Any]:
+    return response(200, agent_response('Generate shift report', 'report'))
+
+
+def list_agent_alerts(event: dict[str, Any]) -> dict[str, Any]:
+    params = query_params(event)
+    status = params.get('status')
+    limit = int(params.get('limit', '20'))
+    if status:
+        result = AGENT_ALERTS_TABLE.query(
+            IndexName='status-createdAt-index',
+            KeyConditionExpression=Key('status').eq(status),
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        items = result.get('Items', [])
+    else:
+        items = sorted_desc(scan_all(AGENT_ALERTS_TABLE), 'createdAt')[:limit]
+    return response(200, {'ok': True, 'alerts': items})
+
+
+def post_agent_monitor_run(event: dict[str, Any]) -> dict[str, Any]:
+    predictions = agent_predictions()
+    top = predictions[0] if predictions else None
+    if not top or top.get('risk') != 'high':
+        return response(200, {'ok': True, 'alert': None})
+    existing = AGENT_ALERTS_TABLE.scan(
+        FilterExpression='zoneId = :zoneId AND #status = :status',
+        ExpressionAttributeNames={'#status': 'status'},
+        ExpressionAttributeValues={':zoneId': top['zoneId'], ':status': 'open'},
+        Limit=1,
+    ).get('Items', [])
+    if existing:
+        return response(200, {'ok': True, 'alert': None})
+    created_at = now_iso()
+    alert = {
+        'alertId': f'AGENT-{uuid.uuid4()}',
+        'zoneId': top['zoneId'],
+        'zoneName': top['zoneName'],
+        'status': 'open',
+        'severity': 'high',
+        'createdAt': created_at,
+        'etaSeconds': top.get('etaSeconds'),
+        'reason': top.get('reason'),
+        'recommendation': top.get('recommendation'),
+        'usedTools': ['predict_congestion', 'recommend_staff_action', 'put_agent_alert'],
+        'source': 'agent-monitor-lambda',
+    }
+    AGENT_ALERTS_TABLE.put_item(Item=to_dynamo_value(alert))
+    return response(200, {'ok': True, 'alert': alert})
+
+
+def post_agent_ingest_metrics(event: dict[str, Any]) -> dict[str, Any]:
+    metrics_response = post_metrics(event)
+    monitor_response = post_agent_monitor_run(event)
+    monitor_body = json.loads(monitor_response.get('body', '{}'))
+    metrics_body = json.loads(metrics_response.get('body', '{}'))
+    return response(202, {'ok': True, 'count': metrics_body.get('count', 0), 'alert': monitor_body.get('alert')})
 
 def list_tasks(event: dict[str, Any]) -> dict[str, Any]:
     params = query_params(event)

@@ -153,3 +153,22 @@ S.H.E.P.H.E.R.D. transforms live camera footage into real-time operational intel
 - `npx cdk synth` — synthesize the CloudFormation template
 - `npx cdk diff` — compare deployed stack with current state
 - `npx cdk deploy` — deploy the stack to your default AWS account/region
+
+
+## Agentic AI scaffold
+
+The stack now includes an AWS-side fallback scaffold for the local agent demo:
+
+- DynamoDB table `aabw-AgentAlerts` for proactive agent alerts.
+- API Gateway routes:
+  - `POST /agent/chat`
+  - `GET /agent/report`
+  - `GET /agent/alerts`
+  - `POST /agent/monitor/run`
+  - `POST /agent/ingest/metrics`
+- Lambda environment for Bedrock-backed answer synthesis:
+  - `AGENT_AI_PROVIDER=bedrock`
+  - `BEDROCK_MODEL_ID` overridable from deploy environment
+- Lambda IAM permission for `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`.
+
+This is intentionally a lightweight deploy-safe scaffold. The presentation path still runs the richer local agent service, but the AWS architecture now has matching agent API/resource placeholders.
