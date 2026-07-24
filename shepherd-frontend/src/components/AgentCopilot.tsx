@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AGENT_URL, askAgent, getAgentAlerts, getAgentHealth, runAgentMonitorOnce, type AgentAlert, type AgentChatResponse, type AgentHealth } from '../lib/agentClient';
+import { askAgent, getAgentAlerts, getAgentHealth, runAgentMonitorOnce, type AgentAlert, type AgentChatResponse, type AgentHealth } from '../lib/agentClient';
 
 const QUICK_QUESTIONS = [
-  'Booth nào sẽ tắc trong 2 phút tới?',
-  'Booth nào đông nhất?',
-  'Tóm tắt 10 phút qua',
-  'Nên gửi staff đi đâu?',
+  'Which area is busiest right now?',
+  'Report on all zones in the last 5 minutes',
+  'Where should we send staff?',
+  'Any signs of congestion?',
 ];
 
 const RISK_LABEL: Record<string, string> = {
@@ -44,7 +44,12 @@ export default function AgentCopilot() {
 
   const latestMetrics = useMemo(() => {
     const raw = response?.metadata?.latestMetrics ?? {};
-    return Object.entries(raw).map(([zoneId, value]) => ({ zoneId, value: value as any }));
+    return Object.entries(raw).map(([name, value]) => ({ name, value: value as any }));
+  }, [response]);
+
+  const recentStats = useMemo(() => {
+    const raw = response?.metadata?.recentZoneStats;
+    return Array.isArray(raw) ? raw : [];
   }, [response]);
 
   const submit = async (nextQuestion = question) => {
@@ -91,7 +96,7 @@ export default function AgentCopilot() {
           <span className="online__dot" />
           <div>
             <strong>{health?.ok ? 'Agent online' : 'Agent offline'}</strong>
-            <small>{health ? `${health.aiEnabled ? 'AI on' : 'fallback'} · ${health.aiProvider ?? 'unknown'} · ${health.zones} zones · ${health.openAgentAlerts ?? alerts.length} alerts` : AGENT_URL}</small>
+            <small>{health ? `${health.aiEnabled ? 'AI reasoning ready' : 'Rules engine ready'} · ${health.openAgentAlerts ?? alerts.length} active alerts` : 'Waiting for agent service'}</small>
           </div>
         </div>
       </section>
@@ -100,7 +105,7 @@ export default function AgentCopilot() {
         <div className="agent-autonomous__head">
           <div>
             <span id="agent-alerts-label" className="rail__label">AUTONOMOUS MONITOR</span>
-            <p className="muted small">Runs in the agent service and creates proactive alerts from live metrics.</p>
+            <p className="muted small">Watches live metrics and creates proactive crowd alerts.</p>
           </div>
           <button className="btn" disabled={checking} onClick={() => void runMonitor()}>
             {checking ? 'Checking...' : 'Run check now'}
@@ -140,7 +145,7 @@ export default function AgentCopilot() {
           <button className="btn btn--primary" disabled={loading || !question.trim()} onClick={() => void submit()}>
             {loading ? 'Thinking...' : 'Ask Agent'}
           </button>
-          <span className="muted small">Ctrl+Enter to send · local URL: {AGENT_URL}</span>
+          <span className="muted small">Ctrl+Enter to send</span>
         </div>
         <div className="agent-quick">
           {QUICK_QUESTIONS.map((item) => (
@@ -156,9 +161,6 @@ export default function AgentCopilot() {
           <section className="agent-card agent-card--answer">
             <span className="rail__label">ANSWER</span>
             <p className="agent-answer">{response.answer}</p>
-            <div className="agent-tools">
-              {response.usedTools.map((tool) => <span key={tool}>{tool}</span>)}
-            </div>
           </section>
 
           <section className="agent-card">
@@ -179,14 +181,28 @@ export default function AgentCopilot() {
           </section>
 
           <section className="agent-card agent-card--wide">
-            <span className="rail__label">LATEST METRICS MEMORY</span>
+            <span className="rail__label">LIVE METRICS</span>
+            {recentStats.length > 0 && (
+              <div className="agent-metrics">
+                {recentStats.map((value: any) => (
+                  <div key={value.zoneName} className="agent-metric">
+                    <strong>{value.zoneName ?? 'Selected area'}</strong>
+                    <span>Current: {value.currentPersonCount ?? 0} people</span>
+                    <span>Peak: {value.peakPersonCount ?? 0} people</span>
+                    <span>{formatTime(value.lastUpdated)}</span>
+                    <span>{prettyStatus(value.currentStatus ?? 'normal')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="agent-metrics">
-              {latestMetrics.map(({ zoneId, value }) => (
-                <div key={zoneId} className="agent-metric">
-                  <strong>{zoneId}</strong>
+              {recentStats.length === 0 && latestMetrics.map(({ name, value }) => (
+                <div key={name} className="agent-metric">
+                  <strong>{value.zoneName ?? name}</strong>
                   <span>{value.personCount ?? 0} people</span>
                   <span>{value.waitSec ?? 0}s wait</span>
-                  <span>{value.status ?? 'normal'}</span>
+                  <span>{formatTime(value.timestamp)}</span>
+                  <span>{prettyStatus(value.status ?? 'normal')}</span>
                 </div>
               ))}
             </div>
@@ -195,4 +211,17 @@ export default function AgentCopilot() {
       )}
     </div>
   );
+}
+
+function formatTime(value: unknown): string {
+  if (!value || typeof value !== 'string') return 'No timestamp yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'No timestamp yet';
+  return `Updated ${date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+}
+
+function prettyStatus(value: string): string {
+  if (value === 'congested') return 'Congested';
+  if (value === 'warning') return 'Warning';
+  return 'Normal';
 }

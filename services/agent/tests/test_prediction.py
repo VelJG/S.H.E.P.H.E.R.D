@@ -5,7 +5,7 @@ from app.prediction import predict_all_zones
 
 
 def test_predict_all_zones_flags_booth_2_as_high_risk():
-    store = LocalDataStore(Path(__file__).parents[1] / "demo_data")
+    store = LocalDataStore(Path(__file__).parents[1] / "demo_data", runtime_dir=Path(__file__).parents[1] / ".pytest_runtime")
 
     predictions = predict_all_zones(store.get_zones(), store.get_metric_history(minutes=10))
 

@@ -48,6 +48,7 @@ export type AgentAlert = {
 
 export type AgentMetricPayload = {
   zoneId: string;
+  zoneName?: string;
   timestamp: string;
   personCount: number;
   queueLength: number;

@@ -17,7 +17,7 @@ class FakeModelClient:
 
 
 def store() -> LocalDataStore:
-    return LocalDataStore(Path(__file__).parents[1] / "demo_data")
+    return LocalDataStore(Path(__file__).parents[1] / "demo_data", runtime_dir=Path(__file__).parents[1] / ".pytest_runtime")
 
 
 def test_agent_uses_llm_when_model_client_is_available():

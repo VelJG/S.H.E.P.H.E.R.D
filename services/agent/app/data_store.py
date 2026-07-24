@@ -11,7 +11,8 @@ class LocalDataStore:
     """Local JSON-backed store for presentation-safe agent data.
 
     Seed data lives in demo_data/*.json. Runtime live metrics are appended to
-    runtime_data/metrics.jsonl and merged with the seed history when queried.
+    runtime_data/metrics.jsonl. Once runtime metrics exist, the agent treats
+    them as the active demo state so old seed data cannot dominate live answers.
     """
 
     def __init__(self, data_dir: Path, runtime_dir: Path | None = None):
@@ -49,11 +50,26 @@ class LocalDataStore:
     def _read_runtime_metrics(self) -> list[dict]:
         return self._read_jsonl_objects(self.runtime_metrics_path)
 
+    def has_runtime_metrics(self) -> bool:
+        return bool(self._read_runtime_metrics())
+
     def get_zones(self) -> list[Zone]:
+        if self.has_runtime_metrics():
+            return [
+                Zone(
+                    zoneId=metric.zone_id,
+                    zoneName=metric.zone_name or _humanize_zone_id(metric.zone_id),
+                    warnAt=_runtime_warn_at(metric),
+                    congestAt=_runtime_congest_at(metric),
+                    avgServiceSec=20,
+                )
+                for metric in self.get_latest_metrics()
+            ]
         return [Zone.model_validate(item) for item in self._read_json_array("zones.json")]
 
     def get_metric_history(self, zone_id: str | None = None, minutes: int = 10) -> list[Metric]:
-        raw_items = self._read_json_array("metrics.json") + self._read_runtime_metrics()
+        runtime_items = self._read_runtime_metrics()
+        raw_items = runtime_items if runtime_items else self._read_json_array("metrics.json")
         items = [Metric.model_validate(item) for item in raw_items]
         if zone_id:
             items = [item for item in items if item.zone_id == zone_id]
@@ -62,16 +78,25 @@ class LocalDataStore:
 
     def get_latest_metrics(self) -> list[Metric]:
         latest: dict[str, Metric] = {}
+        zone_names: dict[str, str] = {}
         for item in self.get_metric_history(minutes=60):
+            if item.zone_name:
+                zone_names[item.zone_id] = item.zone_name
             current = latest.get(item.zone_id)
             if current is None or item.timestamp > current.timestamp:
                 latest[item.zone_id] = item
-        return sorted(latest.values(), key=lambda item: item.zone_id)
+        named_latest = [
+            item if item.zone_name else item.model_copy(update={"zone_name": zone_names.get(item.zone_id)})
+            for item in latest.values()
+        ]
+        return sorted(named_latest, key=lambda item: item.zone_id)
 
     def list_open_incidents(self) -> list[Incident]:
         return [item for item in self.list_incidents() if item.status == "open"]
 
     def list_incidents(self) -> list[Incident]:
+        if self.has_runtime_metrics():
+            return []
         items = [Incident.model_validate(item) for item in self._read_json_array("incidents.json")]
         return sorted(items, key=lambda item: item.created_at, reverse=True)
 
@@ -94,6 +119,9 @@ class LocalDataStore:
 
     def list_agent_alerts(self, status: str | None = None, limit: int = 20) -> list[AgentAlert]:
         items = [AgentAlert.model_validate(item) for item in self._read_jsonl_objects(self.runtime_alerts_path)]
+        if self.has_runtime_metrics():
+            active_zone_ids = {item.zone_id for item in self.get_latest_metrics()}
+            items = [item for item in items if item.zone_id in active_zone_ids]
         if status:
             items = [item for item in items if item.status == status]
         items.sort(key=lambda item: item.created_at, reverse=True)
@@ -102,6 +130,27 @@ class LocalDataStore:
 
 def _default_store() -> LocalDataStore:
     return LocalDataStore(Path(__file__).parents[1] / "demo_data")
+
+
+def _humanize_zone_id(zone_id: str) -> str:
+    cleaned = zone_id.replace("_", "-")
+    if cleaned.startswith("zone-"):
+        return f"Live Zone {cleaned.removeprefix('zone-')}"
+    if cleaned.startswith("upload-"):
+        return f"Upload Zone {cleaned.removeprefix('upload-')}"
+    return cleaned.replace("-", " ").title()
+
+
+def _runtime_warn_at(metric: Metric) -> int:
+    if metric.status == "congested":
+        return max(1, metric.person_count - 1)
+    return max(1, metric.person_count)
+
+
+def _runtime_congest_at(metric: Metric) -> int:
+    if metric.status == "congested":
+        return max(1, metric.person_count)
+    return max(2, metric.person_count + 1)
 
 
 if __name__ == "__main__":

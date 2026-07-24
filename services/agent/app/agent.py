@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from app.data_store import LocalDataStore
 from app.llm import AgentModelClient
@@ -46,11 +47,11 @@ class ShepherdAgent:
         if top is None:
             answer = "No local metrics yet. Start the video processor or use seeded demo data."
         elif top.risk == "high" and top.eta_seconds == 0:
-            answer = f"{top.zone_name} ({top.zone_id}) is congested now. {recommendation}"
+            answer = f"{top.zone_name} is congested now. {recommendation}"
         elif top.risk == "high":
-            answer = f"{top.zone_name} ({top.zone_id}) is likely to congest in about {top.eta_seconds}s. {recommendation}"
+            answer = f"{top.zone_name} is likely to congest in about {top.eta_seconds}s. {recommendation}"
         else:
-            answer = f"No clear overcrowding issue yet. Watch {top.zone_name} ({top.zone_id}) for early signs of congestion. {recommendation}"
+            answer = f"No clear overcrowding issue yet. Watch {top.zone_name} for early signs of congestion. {recommendation}"
 
         response = AgentChatResponse(
             answer=answer,
@@ -89,7 +90,7 @@ class ShepherdAgent:
 
         if busiest:
             answer = (
-                f"Busiest zone right now is {busiest.zone_id} with {busiest.person_count} people "
+                f"Busiest area right now is {_metric_name(busiest)} with {busiest.person_count} people "
                 f"and estimated wait {busiest.wait_sec}s. Open incidents: {len(open_incidents)}."
             )
         else:
@@ -103,7 +104,7 @@ class ShepherdAgent:
                 "question": message,
                 "toolPlan": ["get_latest_metrics", "list_open_incidents"],
                 "latestMetrics": self.tools.latest_metrics_metadata(),
-                "busiestZone": busiest.zone_id if busiest else None,
+                "busiestZone": _metric_name(busiest) if busiest else None,
                 "openIncidents": len(open_incidents),
             },
         )
@@ -114,6 +115,7 @@ class ShepherdAgent:
         if self.model_client is None:
             response.metadata["aiUsed"] = False
             response.metadata["aiProvider"] = "deterministic-fallback"
+            response.answer = self._sanitize_user_answer(response.answer, response)
             return response
 
         system_prompt = (
@@ -121,6 +123,9 @@ class ShepherdAgent:
             "You receive tool outputs from live venue metrics, predictions, incidents, and reports. "
             "Answer like an operations dispatcher: concise, decisive, and action-oriented. "
             "Do not invent zones or numbers not present in the tool context. "
+            "Answer only in English. "
+            "Never mention internal zone IDs such as zone-123, upload-123, booth-1, booth-2, or entrance. Use zone names only. "
+            "Do not mention tool names, JSON keys, implementation details, localhost, or backend internals. "
             "Avoid generic phrases like high risk/medium risk in the final answer. "
             "Say risk of overcrowding, signs of congestion, crowding pressure, or likely congestion instead. "
             "State where to send staff and why."
@@ -135,7 +140,7 @@ class ShepherdAgent:
         try:
             answer = self.model_client.complete(system_prompt, user_prompt)
             if answer:
-                response.answer = answer
+                response.answer = self._sanitize_user_answer(answer, response)
                 response.metadata["aiUsed"] = True
                 response.metadata["aiProvider"] = self.model_client.provider
                 response.metadata["aiModel"] = self.model_client.model
@@ -145,4 +150,36 @@ class ShepherdAgent:
 
         response.metadata["aiUsed"] = False
         response.metadata["aiProvider"] = "deterministic-fallback"
+        response.answer = self._sanitize_user_answer(response.answer, response)
         return response
+
+    def _sanitize_user_answer(self, answer: str, response: AgentChatResponse) -> str:
+        replacements: dict[str, str] = {}
+        for prediction in response.predictions:
+            replacements[prediction.zone_id] = prediction.zone_name
+        for value in (response.metadata.get("latestMetrics") or {}).values():
+            if isinstance(value, dict):
+                zone_name = value.get("zoneName")
+                zone_id = value.get("zoneId")
+                if zone_id and zone_name:
+                    replacements[str(zone_id)] = str(zone_name)
+        sanitized = answer
+        for zone_id, zone_name in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
+            sanitized = sanitized.replace(zone_id, zone_name)
+        sanitized = re.sub(r"\b(?:zone|upload)-[A-Za-z0-9]+\b", "the selected area", sanitized)
+        sanitized = re.sub(r"\bbooth-\d+\b", "the selected area", sanitized, flags=re.IGNORECASE)
+        return sanitized
+
+
+def _metric_name(metric) -> str:
+    zone_name = getattr(metric, "zone_name", None)
+    if zone_name:
+        return zone_name
+    zone_id = str(getattr(metric, "zone_id", "selected area")).replace("_", "-")
+    if zone_id.startswith("zone-"):
+        return f"Live Zone {zone_id.removeprefix('zone-')}"
+    if zone_id.startswith("upload-"):
+        return f"Upload Zone {zone_id.removeprefix('upload-')}"
+    if zone_id.startswith("booth-"):
+        return f"Booth {zone_id.removeprefix('booth-')}"
+    return zone_id.replace("-", " ").title()

@@ -58,8 +58,9 @@ def test_ingest_single_metric_affects_chat(tmp_path: Path):
 
     chat_response = subject.post("/agent/chat", json={"message": "Booth nào đang tắc?"})
     body = chat_response.json()
-    assert "booth-2" in body["answer"] or "AI Demo Booth" in body["answer"]
-    assert body["metadata"]["latestMetrics"]["booth-2"]["personCount"] == 8
+    assert "booth-2" not in body["answer"]
+    assert "Booth 2" in body["answer"]
+    assert body["metadata"]["latestMetrics"]["Booth 2"]["personCount"] == 8
 
 
 def test_ingest_metrics_wrapper(tmp_path: Path):

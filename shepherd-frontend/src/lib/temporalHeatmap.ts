@@ -61,7 +61,7 @@ export class TemporalHeatmap {
     const result: HeatmapUpdate['zones'] = {};
     const alerts: string[] = [];
     for (const zone of zones) {
-      const active = tracks.filter((track) => track.class_id === 0 && pointInPolygon(footPoint(track, frameWidth, frameHeight), zone.points)).map((track) => track.id);
+      const active = tracks.filter((track) => track.class_id === 0 && trackIntersectsZone(track, zone, frameWidth, frameHeight)).map((track) => track.id);
       const mask = this.masks.get(zone.id);
       let sum = 0, max = 0, count = 0;
       if (mask) for (let i = 0; i < mask.length; i++) if (mask[i]) { sum += this.heat[i]; max = Math.max(max, this.heat[i]); count++; }
@@ -169,6 +169,34 @@ export class TemporalHeatmap {
 function footPoint(track: Track, width: number, height: number) {
   const [x1, , x2, y2] = track.bbox_xyxy;
   return { x: Math.max(0, Math.min(width - 1, (x1 + x2) / 2)), y: Math.max(0, Math.min(height - 1, y2)) };
+}
+
+function clampPoint(point: { x: number; y: number }, width: number, height: number) {
+  return {
+    x: Math.max(0, Math.min(width - 1, point.x)),
+    y: Math.max(0, Math.min(height - 1, point.y)),
+  };
+}
+
+function bboxPoints(track: Track, width: number, height: number) {
+  const [x1, y1, x2, y2] = track.bbox_xyxy;
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  return [
+    { x: cx, y: y2 },
+    { x: cx, y: cy },
+    { x: x1, y: cy },
+    { x: x2, y: cy },
+    { x: x1, y: y2 },
+    { x: x2, y: y2 },
+  ].map((point) => clampPoint(point, width, height));
+}
+
+function trackIntersectsZone(track: Track, zone: Zone, width: number, height: number) {
+  if (zone.points.length < 3) return false;
+  const [x1, y1, x2, y2] = track.bbox_xyxy;
+  if (bboxPoints(track, width, height).some((point) => pointInPolygon(point, zone.points))) return true;
+  return zone.points.some((point) => point.x >= x1 && point.x <= x2 && point.y >= y1 && point.y <= y2);
 }
 
 export function pointInPolygon(point: { x: number; y: number }, polygon: { x: number; y: number }[]) {

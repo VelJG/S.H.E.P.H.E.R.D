@@ -20,6 +20,7 @@ class Zone(CamelModel):
 
 class Metric(CamelModel):
     zone_id: str = Field(alias="zoneId")
+    zone_name: str | None = Field(default=None, alias="zoneName")
     timestamp: datetime
     person_count: int = Field(alias="personCount")
     queue_length: int = Field(alias="queueLength")

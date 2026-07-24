@@ -140,12 +140,12 @@ export function useLiveData(
       for (const zone of activeZones) {
         const backend = (tracked.zones ?? []).find((item: any) => String(item.zoneId) === zone.id) ?? {};
         const temporal = heat.zones[zone.id];
-        const personCount = num(backend.personCount ?? temporal?.activeTrackIds.length);
+        const personCount = num(temporal?.activeTrackIds.length ?? backend.personCount);
         total += personCount;
         nextMetrics[zone.id] = {
           zoneId: zone.id,
           personCount,
-          waitSec: num(backend.waitSec ?? personCount * zone.avgServiceSec),
+          waitSec: personCount * zone.avgServiceSec,
           status: (temporal?.status ?? backend.status ?? 'normal') as ZoneStatus,
           heatMean: temporal?.heatMean ?? 0,
           heatMax: temporal?.heatMax ?? 0,
@@ -204,6 +204,7 @@ export function useLiveData(
         const now = new Date().toISOString();
         const payload: AgentMetricPayload[] = Object.values(nextMetrics).map((metric) => ({
           zoneId: metric.zoneId,
+          zoneName: activeZones.find((zone) => zone.id === metric.zoneId)?.name,
           timestamp: now,
           personCount: metric.personCount,
           queueLength: metric.personCount,

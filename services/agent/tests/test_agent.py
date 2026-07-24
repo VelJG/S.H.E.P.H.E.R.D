@@ -5,7 +5,7 @@ from app.data_store import LocalDataStore
 
 
 def agent() -> ShepherdAgent:
-    store = LocalDataStore(Path(__file__).parents[1] / "demo_data")
+    store = LocalDataStore(Path(__file__).parents[1] / "demo_data", runtime_dir=Path(__file__).parents[1] / ".pytest_runtime")
     return ShepherdAgent(store)
 
 
@@ -35,8 +35,8 @@ def test_copilot_question_returns_busiest_zone():
 
     assert response.intent == "copilot"
     assert "get_latest_metrics" in response.used_tools
-    assert "entrance" in response.answer
-    assert response.metadata["busiestZone"] == "entrance"
+    assert "Entrance" in response.answer
+    assert response.metadata["busiestZone"] == "Entrance"
 
 
 def test_explicit_predict_mode_overrides_message():
