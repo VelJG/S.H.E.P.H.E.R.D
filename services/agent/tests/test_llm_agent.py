@@ -48,3 +48,15 @@ def test_agent_falls_back_when_llm_fails():
     assert response.metadata["aiProvider"] == "deterministic-fallback"
     assert "aiError" in response.metadata
     assert "staff" in response.answer.lower()
+
+
+def test_llm_prompt_uses_overcrowding_language():
+    model = FakeModelClient()
+    agent = ShepherdAgent(store(), model_client=model)
+
+    agent.chat("Brief situation report", mode="report")
+
+    system_prompt = model.calls[0]["system"]
+    assert "risk of overcrowding" in system_prompt
+    assert "signs of congestion" in system_prompt
+    assert "Avoid generic phrases" in system_prompt

@@ -736,7 +736,7 @@ def invoke_bedrock_answer(question: str, fallback_answer: str, tool_context: dic
         'anthropic_version': 'bedrock-2023-05-31',
         'max_tokens': 420,
         'temperature': 0.2,
-        'system': 'You are SHEPHERD, an AI venue-operations agent. Use only the provided tool JSON. Be concise and action-oriented.',
+        'system': 'You are SHEPHERD, an AI venue-operations agent. Use only the provided tool JSON. Be concise and action-oriented. Avoid generic phrases like high risk or medium risk in the final answer; say risk of overcrowding, signs of congestion, crowding pressure, or likely congestion instead.',
         'messages': [
             {
                 'role': 'user',
@@ -773,10 +773,10 @@ def agent_response(question: str, mode: str = 'auto') -> dict[str, Any]:
     normalized = question.lower()
     intent = mode if mode in ('predict', 'copilot', 'report') else 'report' if any(term in normalized for term in ('report', 'summary', 'tóm tắt', 'shift')) else 'predict' if any(term in normalized for term in ('predict', 'tắc', 'congest', 'staff', 'nghẽn')) else 'copilot'
     if intent == 'report':
-        fallback_answer = f'Shift summary: {len(latest)} active zones. Top risk: {top["zoneName"] if top else "n/a"}. Recommendation: {top["recommendation"] if top else "keep monitoring"}'
+        fallback_answer = f'Shift summary: {len(latest)} active zones. Strongest signs of congestion: {top["zoneName"] if top else "n/a"}. Recommendation: {top["recommendation"] if top else "keep monitoring"}'
         used_tools = ['generate_shift_report', 'get_latest_metrics', 'predict_congestion']
     elif intent == 'predict':
-        fallback_answer = f'{top["zoneName"]} ({top["zoneId"]}) is {top["risk"]} risk. {top["recommendation"]}' if top else 'No metrics available yet.'
+        fallback_answer = f'{top["zoneName"]} ({top["zoneId"]}) shows {top["risk"]} signs of congestion. {top["recommendation"]}' if top else 'No metrics available yet.'
         used_tools = ['predict_congestion', 'get_metric_history', 'recommend_staff_action']
     else:
         busiest = max(latest, key=lambda item: int(item.get('personCount', item.get('queueLength', 0)) or 0), default=None)

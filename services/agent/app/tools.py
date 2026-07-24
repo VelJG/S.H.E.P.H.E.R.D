@@ -48,7 +48,7 @@ class ShepherdTools:
         recommendation = (
             high_risk[0].recommendation
             if high_risk
-            else "No urgent zone detected. Keep one staff member watching medium-risk queues."
+            else "No urgent overcrowding detected. Keep one staff member watching queues with early signs of congestion."
         )
         summary = (
             f"Shift summary: busiest zone is {busiest.zone_id if busiest else 'n/a'}, "
@@ -62,7 +62,7 @@ class ShepherdTools:
             "averageWaitSec": avg_wait,
             "totalIncidents": len(incidents),
             "openIncidents": len(open_incidents),
-            "highRiskZones": [item.zone_id for item in high_risk],
+            "overcrowdingWatchZones": [item.zone_id for item in high_risk],
             "recommendation": recommendation,
         }
 

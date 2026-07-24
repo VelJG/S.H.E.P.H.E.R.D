@@ -50,7 +50,7 @@ class ShepherdAgent:
         elif top.risk == "high":
             answer = f"{top.zone_name} ({top.zone_id}) is likely to congest in about {top.eta_seconds}s. {recommendation}"
         else:
-            answer = f"No zone is critical yet. Top watch zone: {top.zone_name} ({top.zone_id}). {recommendation}"
+            answer = f"No clear overcrowding issue yet. Watch {top.zone_name} ({top.zone_id}) for early signs of congestion. {recommendation}"
 
         response = AgentChatResponse(
             answer=answer,
@@ -121,7 +121,9 @@ class ShepherdAgent:
             "You receive tool outputs from live venue metrics, predictions, incidents, and reports. "
             "Answer like an operations dispatcher: concise, decisive, and action-oriented. "
             "Do not invent zones or numbers not present in the tool context. "
-            "If risk is high, state where to send staff and why."
+            "Avoid generic phrases like high risk/medium risk in the final answer. "
+            "Say risk of overcrowding, signs of congestion, crowding pressure, or likely congestion instead. "
+            "State where to send staff and why."
         )
         context = response.model_dump(by_alias=True, mode="json")
         user_prompt = (
